@@ -11,7 +11,7 @@ A lightweight screenshot tool for Windows. Press **Print Screen**, drag over an 
 ## Features
 
 - **Area selection** across all monitors. Hold **Space** while dragging to move the frame without resizing it. Drag an edge or corner (the blue handles) to adjust a finished selection.
-- **Annotation tools:** pen, line, arrow, rectangle, highlighter, text and blur (pixelate).
+- **Annotation tools:** pen, line, arrow, rectangle, highlighter, text, numbered markers (1, 2, 3…) and blur (pixelate). You can draw past the frame, but only what's inside it ends up in the screenshot.
 - **Color and width:** use **−/+**, the mouse wheel, or type a number and press Enter. For blur, the same controls set the strength (1–10). While you're dragging a shape, the mouse wheel changes the width of that shape.
 - **Custom hotkey:** any single key (F1, Print Screen…) or a combo with Ctrl/Alt/Shift/Win, including system ones like Win+Shift+S.
 
@@ -31,7 +31,7 @@ Screenshots are saved to `Pictures\Screenshots` by default. To change the folder
 ## Install
 
 1. [Download the code](../../archive/refs/heads/main.zip) and unzip it to a permanent folder, e.g. `C:\Users\<you>\Apps\Snipper`. Avoid `Downloads`, because the app starts with Windows from wherever it is.
-2. Double-click **`build.cmd`**. Windows builds `Snipper.exe` with its built-in .NET Framework compiler and starts it. A blue round icon appears in the tray next to the clock.
+2. Double-click **`build.cmd`**. Windows builds `Snipper.exe` with its built-in .NET Framework compiler and starts it. The Snipper icon appears in the tray next to the clock.
 3. Autostart with Windows is turned on at first launch. To turn it off, right-click the tray icon and untick **Start with Windows**.
 
 Requires Windows 10 or 11 (.NET Framework 4.x is built in).
@@ -70,7 +70,7 @@ Upgrading from the old **Screenshoter**? Just build and run Snipper. It moves yo
 ### Можливості
 
 - **Виділення області** на всіх моніторах. Поки тягнете виділення, затисніть **Пробіл**, щоб пересувати рамку, не змінюючи її розміру. Готове виділення можна змінити, потягнувши за край або кут (сині квадратики).
-- **Інструменти:** олівець, лінія, стрілка, рамка, маркер, текст і розмиття (пікселізація).
+- **Інструменти:** олівець, лінія, стрілка, рамка, маркер, текст, нумерація (1, 2, 3…) і розмиття (пікселізація). Малювати можна й поза рамкою, але в скріншот потрапляє лише те, що всередині.
 - **Колір і товщина:** кнопки **−/+**, колесо миші або впишіть число й натисніть Enter. Для розмиття ті самі кнопки змінюють силу (1–10). Поки тягнете фігуру, колесо миші змінює товщину саме цієї фігури.
 - **Своя гаряча клавіша:** будь-яка одна клавіша (F1, Print Screen…) або поєднання з Ctrl/Alt/Shift/Win, зокрема системні, як-от Win+Shift+S.
 
@@ -90,7 +90,7 @@ Upgrading from the old **Screenshoter**? Just build and run Snipper. It moves yo
 ### Встановлення
 
 1. [Завантажте код](../../archive/refs/heads/main.zip) і розпакуйте в постійну папку, наприклад `C:\Users\<ви>\Apps\Snipper`. Не розпаковуйте в «Завантаження»: програма запускатиметься разом із Windows з того місця, де лежить.
-2. Двічі клацніть **`build.cmd`**. Windows збере `Snipper.exe` вбудованим компілятором і запустить програму. У треї біля годинника з'явиться синій круглий значок.
+2. Двічі клацніть **`build.cmd`**. Windows збере `Snipper.exe` вбудованим компілятором і запустить програму. У треї біля годинника з'явиться значок Snipper.
 3. Автозапуск разом із Windows вмикається при першому запуску. Щоб вимкнути, клацніть ПКМ по значку й зніміть позначку **Запускати разом із Windows**.
 
 Потрібна Windows 10 або 11 (.NET Framework 4.x уже вбудований).

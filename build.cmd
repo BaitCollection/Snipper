@@ -8,7 +8,9 @@ if not exist "%CSC%" (
   exit /b 1
 )
 echo Building Snipper.exe ...
-"%CSC%" /nologo /target:winexe /optimize+ /codepage:65001 /out:"%~dp0Snipper.exe" /r:System.Windows.Forms.dll /r:System.Drawing.dll "%~dp0Snipper.cs"
+set "ICON="
+if exist "%~dp0app.ico" set ICON=/win32icon:"%~dp0app.ico"
+"%CSC%" /nologo /target:winexe %ICON% /optimize+ /codepage:65001 /out:"%~dp0Snipper.exe" /r:System.Windows.Forms.dll /r:System.Drawing.dll "%~dp0Snipper.cs"
 if errorlevel 1 (
   echo.
   echo Build failed. See the errors above.
