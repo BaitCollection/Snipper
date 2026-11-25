@@ -6,3 +6,6 @@
 # Windows
 Thumbs.db
 desktop.ini
+
+# Build logs
+*.log

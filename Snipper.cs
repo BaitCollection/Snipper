@@ -18,7 +18,7 @@ using Microsoft.Win32;
 
 [assembly: System.Reflection.AssemblyTitle("Snipper")]
 [assembly: System.Reflection.AssemblyProduct("Snipper")]
-[assembly: System.Reflection.AssemblyVersion("2.1.0.0")]
+[assembly: System.Reflection.AssemblyVersion("2.4.0.0")]
 
 namespace Snipper
 {
@@ -207,6 +207,22 @@ namespace Snipper
             return r + name;
         }
 
+        static string GetStr(string name, string def)
+        {
+            using (RegistryKey k = Registry.CurrentUser.OpenSubKey(Key))
+            {
+                string v = k == null ? null : k.GetValue(name) as string;
+                return string.IsNullOrEmpty(v) ? def : v;
+            }
+        }
+        static void SetStr(string name, string v)
+        {
+            using (RegistryKey k = Registry.CurrentUser.CreateSubKey(Key)) k.SetValue(name, v);
+        }
+        // Font for the Text tool: family + style (1 bold, 2 italic, 4 underline). Size comes from the size control.
+        public static string TextFontName { get { return GetStr("TextFont", "Segoe UI"); } set { SetStr("TextFont", value); } }
+        public static int TextFontStyle { get { return GetInt("TextFontStyle", (int)FontStyle.Bold); } set { SetInt("TextFontStyle", value); } }
+
         public static int PenWidth { get { return GetInt("PenWidth", 4); } set { SetInt("PenWidth", value); } }
         public static int BlurStrength { get { return GetInt("BlurStrength", 4); } set { SetInt("BlurStrength", value); } }
 
@@ -243,6 +259,10 @@ namespace Snipper
         public static readonly Dictionary<string, string> Data = new Dictionary<string, string>
         {
             { "Number", "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" },
+            { "Pin", "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAFjUlEQVR42t2bS2gdZRTHfzPzpSpSH+3CQn2BcVUqbgRB3dRHI6JGRNQqFAxqsWAUiqIirhTtKhq1CrY+EC0o2hqt1EgXLmzBakVUKoiIShFxZaOmyZ07LuYcPAz35s57JnfgktzJZe73/3/n8f/OOfGi7dtp+eUDEbAG2AeMAo8AzwMjwGKRhzuWx+UBrwMXA11gGugALwmGThF223wFAngjcLUA9eTeDmCr3BsZVgI8+XmDuIHe84BQ3OA+cYORYSRAQa81wJUEX0h4oQgJy8UC/k0QUhoJbSdA48DHCUJKI2E5WEAI/CQ//T6fyU2C32LgToBcB+wZsNbcJPgtBe9LetsCzABn9nGBwiS0jQBVfSHwtOT6SPK+l4G81CS4lgW7EDgZeBW4TawgSAm+HwkAL/aTzW0hQOXsGuBd4LIi4iYLCa5F4C8C3gMuKCpvs5DgtwT8tcBnAj4scWMGxgS/wUgfCPh7gQ+B02WhQUVZpScJTRBgI/1TcqRFIn1QcWpVErYKCc41FOlPAnYBm4zC82rSF3qK7AI7XAP+fhbwDnCFvHcNiKxQAuKcK+mBdve68uoFfr1E+tEawXcTru6Ze1tcCUyGSyjMrgG/EXhbZG1d4KNEzNG1aRbI5QK+AAvFnC8FLgRWAL8Ah4Gjxuc7wN0S7PyS01yanf9RLM5+57fAw8A+l2Pnu8Bq4AngDmBV4jOLwCfA48AR4EngUaPpgxrAq4VNA9uAS4B18rejwEFZp+9lKIvrzq8D3pddR3Y0SuR3gOPAF8AGc5jxagQ/Q1xLXDIjuYz+FABvCvgF8aVeOxoCKw34uvSGutcR4PbE9/oGh7pwal+0xciVhkFvCXbrNHkrpI4BNwJ/G6ulR2bKJIUjAdsB7gHmTc1+kNylxurxPwL+1xTry3wWUFM+IL41n2CYBkvnqibvlCzk+qTnwhUhzeuzLSJB/f5BCc4jWVplfoEo2wYSdC3PAVOmkFp5X6ANJOga9gKTWcy+rKJokySo2X8pJ0o/oUdq6ww1QYKmu9+AcYn85AFfVkGkThJsuhsXEoIi3+WX7I9VkmDT3SYx/1x+X1VjJEnCgjmKlun3kxL4Ck2GVFUU1XL2LHAlMCcEFCVhUQBPScorBXxVRVEFe05JUlhJ3SNip7DZV0mA7swE8BZwSsFjsCrPw1J7yJ3u6iBAwd8FvGIW6iVqhVHGA9gPwE1F013VBFjwO3uUuvUgpfeilEHPA16WdDdSRWr1awDfkfdfAZuBE6a0xoCKTQQ8BpxrntMqAtKAd8RFyOuBN+S8nkYn6HjMaqnrRW0jIC3474iHHI8Rd4T2ZxBLqiPGiecGOmXXFf0awF8F/C4mfSKjYtRnrgXOTzEmUwsBecGHOWWzmv4ZbSCgKPg8ZwfNGnNNp0EFv7kg+CwkqG74A/i5SQK0znYz8JrJ63nBpyVBGyr7xQKCJgjQOtsYsLtHlycv+EEkLPB/Kf6ZDAKqVALU7C8nbmsHiUBUFPxSJKyQZ20Dvq+qyOIGKLEOcS9wrxxsbJtLF/0Nces7L/heJGwg7ih/LueKoMwTYBoC9NR1NvARcQfYDjDpkNEhUXh/lrRIlbsH5WUVIVUNLPVTX6cJ+PP6gD8AXFMi+GQHylUR9AYRYIPbbuLhxY4Br8WJD4inuI8ba6Hkym+nyp3vR4Du5DTx8KL6ZWR+3yXavC29wdII0Ig/iZmjM2LESTqaMJayrMHbIGgHmabMbtuo/wDwrKnDRwzB5Uy6G5U6XmRMOwD+Im47z5RZjW0TARFwqgidVaaW54gnrG4Bvh5G8HbwaSfxEOOiIWaWeG5/aMErAQ8Bt5r8HkgWGJNTWDCs4JWAMXPimyceX7/fxIKQIb4c8T8nrSeuu08An5ruS5chv/4DdFsAdBw7opAAAAAASUVORK5CYII=" },
+            { "Timer", "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" },
+            { "Picker", "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAFMUlEQVR42uWbS4jdVBjHfyfJaEsdEbU+qqAgFBdSfCCoW7FDxYVQEB8obupGEEVR0YUdUMGNgg9wK+rUFz6woLVudK12KOhCnW58UVsHaitVJ8lxke/gxyG5N8nk5tXA5d65N5Pk9//O43ucY+zBJziVj2gEDEZ9tqeKAAYIgVRe+gjlPS0jyBAFCIEEiOXvOWCTfHdc3v1zRyGAkVcCnAvcBtwMXA6cJYIcBr4BPgD2yrkTRYgG1s9T4H7gSeDCnPPOB7YB9wJfA48Dn08SIRgAfKBEeA14WeBjgXJ93cpn9/01wH7gUdUSBtcCNPweafZr8txRQUtx/+Ms/pyc+2xeSwgGAG89+Dlv6ps0WAbSIp4BduS1hGAA8G958HUGTgu8BGyQbmL6LEBT8LolpMBlwK1y3bAvAgTqZZRlmoLXHqIFdvoeY9SxldOc75uGRwm8zR8Iow49OYAtwAXASeAQ8O8M4LUfcTZwBnDMjQ1RR/DXA7uBG+SBLPADsApcJ+fMMbJoMBCwnWLlyLPQVtUtwobvbeUeq8AJPQ4ELcJb4ArgTYGP1WDkvLhkRs/kvMWDvi8QtejLp8DTwOkCH+XM17MOpN7zcwhBS/AJsBm40Z+HWzhcq/oR+Eg9T2sCuHtcIgMeM7Z23vxvgAeAv1V3bE0Ad7O45RnHiqUjCZ8/6SoYcgIcAv6om7tbB/xuiQSjvJxAWwKEwJ8yCJlpaaqG4RfVrNNZQiSVez0FfKcClLbgk2kDVFvHYekKRg1QbcDbLgUIFPDbwC0qJjcNtYRa8G0IkBfbx+q3E/KeNiBAZfhZC1CU2LDy2x7gSmBZpa7W4+YuVoWfpQBF8EiU9w5wN7ACbCfL5Uc1RHBe3pdi/UrwsxKgDPztYrkIOAIsAAdqiOA8yq3AmXVaUdARvBsAY5kSj0pLcCKkFQW4iP8LJaYrAarA63RYokRYkO5QdWBM6jpXQcfwGsB1hx06ZVUy2PkV+LmOmx30AF5ni0LgBWDeS5JMsrwB3pdIL6oqQNQTeHcsyTXSglq/vl8MnAb8IsFOrRgj6Am8fw0XO7wBvCKfQzV4BgK/QlYi/71kl2msBcwS3j2X8xUA9gG7xHHaIFbfK91ldT3eZNQgvJHrvQvc6RU/TMH0NU1AF0d8LK+NYvlj3vOkbaXFi+BdJXYJuKtCmnpa67EqTW7JCign1bMn640johpeVxH8p5J3O2dCszeqpbxYoutYr9ZvvEGQtgojOm1dVLq6GvjeTzpOuO+8EqnsuGG7qgy5frY0oW53Xo0oLqkAT1elMZdJfUgesqhoaWtEcp3ClxHAZWzmgcem1O2qBCFrfYAv4wi5368lW4LWhPvcG/gyMG762aKmpNHATxMgJFuwsBl4sAHr9w5+0hgQqiWp+4CrlH8+GvgiiwYK/jOBj8cInyeAm+99+GiM8L4A7uE2SuAxenhfAFeve4RsodJaTfh0KPD+YuRYYu1dNRYq6Z0bgcC/DtzhnUOfBYBsOenFavVmlcqvC4K+Be4D7lHucS/h86bBTSoOL+PaujHigHSdoyJAkhPSDkKA34B/yFZyTRNBwy+QpbRL79XpWxdwzfgn4CtVbp4Gv6zg51QKaxDwRdPgosraxN6WlETNDstk5awjYvG1slvV+iqAq7TuBx4G/hJQvZQ9FEt/Adyk4BMYx85R1xWeBz4k2321HbhULLtCVtd/VQk2WHgAU7B32LfqvLwf97qMhXHuHU7U3J4ocKPEGTz8tJSY9u4aT0cPbfe4ZaTHf/t7370Sj952AAAAAElFTkSuQmCC" },
+            { "Fish", "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" },
             { "Select", "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAFkElEQVR42u2bTYgdRRDHf93vvTVZzfqBCoJGEaISIrkIiUHFD4LgTYWcPISIikajrAb8OuhFT+ZiZCWCeknQGBAET0GIegh+gHoQ1KAE9iboJmvysu57b8bDVEMxds9XJuybt9PQ7Jve6Z6q6urqqup/mz0HY1ZzsazysuoF0K3Qx+T8P67Yr65x4gshAAN0gEhqnlal3+kAowraGRVo8/Wz8r24DgG4jw7leRq4KPDuqQCBo5x+6XIOWBLBayYioXldoN+/QF/RkCuwPAG4mbsY2Ak8BNwkzJiU2sXAPPAo8IN8PBYCngX2igBshhq7cf4BXgUOKjsVAfcB7wBXyhhpGvrAb8CnwIfAmTztMxnboOt4O/A+cEvB2fsSuFuEOwRuBH6vYGsWgRuABWHUAj8DNxfs/wuwCzieJQSbofYjYAtwVJgfAMsF1tVKOhax0DgQmo8KD6MQr92AwYuBS4BDov5DedeIKp4KqO48MKvGsMAfwHPAC8CaEkvgFZl9q+zIbmA/cJVnCQBcCkzJGEOh/RCwGTjrsSneJeBU131soJh/G5gD/lTE6rKQMTtljGBfDJrxfMNnBJ0wrgaeBJ5RQugBT4vt6CpjHtQAZzV3KCNmZIA9FbevjjDVL6HOvnVrhYGQoP8SGq1MYCQ87BD6ozwb4FR8Gtggz1OiBW/J+10lcV8NbYOmZB0FJierT1do3Cc0T0n7BuEpSi+bkBFcI9UJ5Yza40dK/X2VnPVdtFYZZyQ0LgjNxsNPoV1gEkPEuA2GWgGUE0Dc4CVhPPSbMrGASW1ntkI4u5LF+S6R4nNQVAOc1V9QoeXfKas6zobOiid5QNF/QNpsWpu7gQGWJfrbJ+2z0lYkHl/p4vb6vcDn0nYs5KNkeYJfAbcF/teELc8I4wRc6tx8gG0o83opTymbEFdJiEQN3i4jCagqb4MRcI3UqEG7gOPpWuBdqdeF+LWBKAzgceBXqY+JCnUaIoQO8DHwhNSPQrT7okGXwHxD4u518ntaRXXjvO4jYAa4VULnIbBJ2kpFg1ZFWZ1QNNUAZ+h/SZAiRjBOuY95Ieq4agN5hyn2fAdoo8FWAK0AWgG0AmgFMHkCKJxSmtSUmDtScocTvSxvaoy9wLhsSsxlhBaBw+ICu8Bi0ZdSGuOU2Jw6MZqTtk6Rw1F9svuwPB9RgUSTXOI75e/XZWKBWOUDPmnwiZFRjFdOibmU0nJDU2I9ZdNKCyAiASo1tUQycaW3QbddXAG8Drwmv5sSFToa1wPvSb0+xG8IImNIoCX3S9tW4IEG2QG3c22V503AHT7abUZKaZtKKW0LpZTG1AGaATYq+jeWTYmZVEpp0MCkyLBISmySM0LnnRJro8HVHg1OWikVDS4pJ8ihRi8DTisY7UrdF8gay0H6LxeaXRi8FHLqQtFgHzihsLc94HkFm8+CqoWO28rC5EyAUZvRZyg0zgrNDtt8QnjKBUhopOdh4C7VySEvs6Cydd0XiD14ZO3izqTO+tJQ2d1qMozw4kWxhsJhSIDGP5HA3YfyQeconc4AS+8CfkzdF3gKeAlYmzGz6SP574FHSOCvRmnSfuBBBX8hBZa2CjTZJYHqb1Yw3bjIfQEnqS3AFyIMBzLo5TBwDLhHOSDrgZMlbYBbAm8CL5OcSy5JfuJITr+BigTPAvcC34bgPTZjFjrAN8B2kssHPYW9rcuYUfMu5FAhPaF5exbzeeHwSIRwnAQrtJNiV2bS9wXmSeDqL6p+RZbAdyQgLaMAWp+RIL58SyB9ZeYD0YDKV2ZC8PcsY5Z1X2BtiSP2LCOIxwiSujRFXZemNOzM7bF5uP/QfYFzUssug9gz/mLBa3NRXfcGYxVRmYLAKt99gTpsR1RgCUUX8uZo1YRInYmUuA2GWgHUU/4DioXO5dbpBxcAAAAASUVORK5CYII=" },
             { "Pen", "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAE5ElEQVR42uXbSYgcVRjA8X+9mnbDIIKQgyIIiqCezEGRGCUIIiKoGB1BzDqTuKNGBEVRL2JcEqMmGeNkGRXBBTUHBQPRoBLjRSQQDy4gCCJIUDw4OLV4qO8xH2+qerp7ql5V9RQMPfQy837f++ot1V8FXx49TouPEIhznkuAtJc/MNJSeCCPMXA2sEws3wM/dwnOnMO0FB9IDz8D/AB8DHwAHAcmgDMFPzJsAQikzQmwE3gCWCLYGDgJGAe+Ba4EovmCYFqIjwW/CZiRTAjlJxX0+cAhCUYkrwVtDoDG71L4jgMLpMcTQU8AT8vnTF4QTMvwE8BGhZ8vsyPgSWCLfD5sWwBc/HgPeP3ZUN7/iGTCnDHBDCnePSVsJoy7QTBDjHczIQZ2AFeogbGRAdD41xeId9cOIfAWcIbMGIFpOH6sBLzO9gg4D3hOZgpjFgne3SeMARcAsWkgfndFePt/EvlflzdlDHDxGyrCN3Ip7Bufqo3UkboDoPFvCD6quOft9LcV+AkITUPw63vZuZWA7wBTwGY7IJpFgp+Rvz8FrFaDYWoWUc/vF7yRMSD1PQbUhR8R/BoX7zMAGj/pGb+vCO8rAC5+nUf8XmBtER4PV4U1fo80xid+XTd81Rlgd2B14PcIPuyGrzIAgZpq6sCv7/ULEjNk+Ml+8FUEQOP3esbb5XRfX42ZCvFrPOPH+sWXGYA68HZ5u3tQfFkB0Ph9HvEddc1wIHwZAXDxqz3jNy4Ev9AA1ImfKAO/kJWgxu8H7vSM31QGftAMyMPPeMLvKhM/SACK8B0P+J3AXWXi+w1A3fi7y8b3E4A68TuqwvcaAI2f8ox/DbinKnwvs4DGvwnc4Rl/b5X4+TLAlpPUgX/VB76XAIQ14F8B7vOB7xYAW2i0QfD/ecTf7wvfLQCJPK5V36ZG8pNWdN1+u2980SBoCxEvIitBDXLel5S0k7TL5+3AA77xRRlgn1ulGjQtvfMUszV3cUn4l+vCF2WArae7hdmqivfk/AT4gqzO5pyi2rs+8NuAB+vC52WAvYy8DLhE9fI70uBTgcPAcrLK7FAwrcTnBcDO/bep1/8APpeGT0vjfwVWkhUlj/RxOlj81ibg3QAE0sCTgZtUNcUnwD/S8FQVGZwArgOO9Vibb/EvAQ81Ae8GwP6+nKyUzILeZba8xB0nTgA3SJYYNX12wz/cFHxeBgCMqvHgNznnycHF6nQYVZi0AP9i0/A6ADb9l0iP6vT/V6V/Xs+eIjPDsznTo8ZvbhpeB8DeUHANsFQQCdmVV5PTYKOm0Gl5/KWg519oKl4HwH6DOqp6PwIuVKlv0XZ7bIErZI2wTb3XXiN8nqxUvZF4FCgGzgKuVdcAOsDbwMXA4844cClwM3CjvK5r8GxQtwCPqmmycXgbADuFXU9WRR079988RnY31tfArQK/jLnFh4GcDl/JFnpKjQmNxOttbwrc7jQ0UKk7KZDTHLQ9vgHeBw4APzqbqkYfNgDnAlc5KYwqK+3IAkk/fwz4CPgQ+M4ZV4ISNkteN0NXCzBSU16iZgjUSH9AevuIeo/OloQWHTYAfzq3o4YK/jvwqewID8u6wM2gZIBNUWMCYIDPBLhKnv8bOCjL4IPAX85n0jajycFEMsKvBE4Hjsr6Huc0GAp0XgDscchBB+q+3KE8/gcMLN2RCb10fwAAAABJRU5ErkJggg==" },
             { "Line", "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABoklEQVR42uXbu0oDQRiG4dfN3oUiVppKsBCsPRTegoXgpWnhLVhoqjQeCq0EU4noTYgGmx2QsKtJdg7/YZpppnlepv1WxnfPODg18AUMgXNgG3gCzmpH+E3gCtgApsAecFE7wW8BI2AV+AYGzb1bOcHftOAHwGPlBL/Wgn8DTmqn+A/gCJhUDvHvwAEwAerKIf4QeAnvK894gMoz3kKAXnjtAXrjNQeIgtcaIBpeY4CoeG0BouM1BUiC1xIgGV5DgKR46QGS4yUHyIKXGiAbXmKArHhpAbLjJQUogpcSoBheQoCi+NIBiuNLBhCBLxVADL5EAFH43AHE4XMGEInPFUAsPkcA0fjUAcTjUwZQgU8VQA0+RQBV+NgB1OFjBlCJjxVALT5GANX4vgHU4/sEMIFfNoAZ/DIBTOEXDWAOv0gAk/h5A5jFzxPANP6/AObxfwVwge8K4AbfFsAVfjaAO/zvAC7xIYBb/OyocNQxLTOLDz9gCFx7xIcAl8C6R3wIsNOxqzOPDwEeGvS0uV+BfQ/4EOAUuAU+gXvgmGZUaB0P8AOM2Kr/cshSYwAAAABJRU5ErkJggg==" },
@@ -260,6 +280,28 @@ namespace Snipper
         static readonly Dictionary<string, Bitmap> cache = new Dictionary<string, Bitmap>();
 
         // Icon at the requested size (each has its own pastel color), scaled cleanly for DPI
+        // Raw icon recolored to a single color (keeps its own aspect ratio)
+        public static Bitmap Tinted(string name, Color c)
+        {
+            string key = name + "#" + c.ToArgb();
+            Bitmap b;
+            if (cache.TryGetValue(key, out b)) return b;
+            using (MemoryStream ms = new MemoryStream(Convert.FromBase64String(Data[name])))
+            using (Bitmap src = new Bitmap(ms))
+            using (ImageAttributes ia = new ImageAttributes())
+            {
+                ColorMatrix cm = new ColorMatrix(new float[][] {
+                    new float[] { 0, 0, 0, 0, 0 }, new float[] { 0, 0, 0, 0, 0 }, new float[] { 0, 0, 0, 0, 0 },
+                    new float[] { 0, 0, 0, 1, 0 }, new float[] { c.R / 255f, c.G / 255f, c.B / 255f, 0, 1 } });
+                ia.SetColorMatrix(cm);
+                b = new Bitmap(src.Width, src.Height, PixelFormat.Format32bppArgb);
+                using (Graphics g = Graphics.FromImage(b))
+                    g.DrawImage(src, new Rectangle(0, 0, src.Width, src.Height), 0, 0, src.Width, src.Height, GraphicsUnit.Pixel, ia);
+            }
+            cache[key] = b;
+            return b;
+        }
+
         public static Bitmap Get(string name, int size)
         {
             string key = name + "@" + size;
@@ -297,8 +339,17 @@ namespace Snipper
         public List<Point> Points = new List<Point>();
         public bool Marker;
         public float MinStep = 3f;
+        public bool Straight;   // Shift held: straight line from the start point
         public override void Update(Point p)
         {
+            if (Straight)
+            {
+                Point start = Points[0];
+                Points.Clear();
+                Points.Add(start);
+                Points.Add(p);
+                return;
+            }
             Point last = Points[Points.Count - 1];
             float dx = p.X - last.X, dy = p.Y - last.Y;
             if (dx * dx + dy * dy < MinStep * MinStep) return; // ignore tiny mouse jitter
@@ -392,11 +443,18 @@ namespace Snipper
         public Point At;
         public string Text = "";
         public override bool IsEmpty { get { return string.IsNullOrEmpty(Text); } }
+        public string FontName = "Segoe UI";
+        public FontStyle Style = FontStyle.Bold;
         public float FontSize { get { return 12f + Width * 2.5f; } }
+        public Font MakeFont()
+        {
+            try { return new Font(FontName, FontSize, Style, GraphicsUnit.Pixel); }
+            catch { return new Font("Segoe UI", FontSize, Style, GraphicsUnit.Pixel); }
+        }
         public override void Draw(Graphics g, Bitmap source)
         {
             if (string.IsNullOrEmpty(Text)) return;
-            using (Font f = new Font("Segoe UI", FontSize, FontStyle.Bold, GraphicsUnit.Pixel))
+            using (Font f = MakeFont())
             using (Brush b = new SolidBrush(Color))
             {
                 g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
@@ -420,31 +478,59 @@ namespace Snipper
             using (Brush fill = new SolidBrush(Color))
             using (Pen edge = new Pen(Color.FromArgb(90, 0, 0, 0), Math.Max(1f, r * 0.08f)))
             using (Brush txt = new SolidBrush(ink))
-            using (Font f = new Font("Segoe UI", r * (Number >= 10 ? 0.95f : 1.15f), FontStyle.Bold, GraphicsUnit.Pixel))
-            using (StringFormat sf = new StringFormat())
+            using (StringFormat sf = new StringFormat(StringFormatFlags.NoWrap))
             {
                 SmoothingMode old = g.SmoothingMode;
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.FillEllipse(fill, rc);
                 g.DrawEllipse(edge, rc);
-                sf.Alignment = StringAlignment.Center;
-                sf.LineAlignment = StringAlignment.Center;
-                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
-                RectangleF tr = rc; tr.Offset(0, r * 0.04f);
-                g.DrawString(Number.ToString(CultureInfo.InvariantCulture), f, txt, tr, sf);
+                if (Number == 100)
+                {
+                    // easter egg: 100 becomes an ichthys
+                    Bitmap fish = Icons.Tinted("Fish", ink);
+                    float fw = r * 1.45f, fh = fw * fish.Height / fish.Width;
+                    InterpolationMode im = g.InterpolationMode;
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    g.DrawImage(fish, Center.X - fw / 2, Center.Y - fh / 2, fw, fh);
+                    g.InterpolationMode = im;
+                }
+                else
+                {
+                    string label = Number.ToString(CultureInfo.InvariantCulture);
+                    sf.Alignment = StringAlignment.Center;
+                    sf.LineAlignment = StringAlignment.Center;
+                    g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+                    // shrink the font until the number fits inside the circle on a single line
+                    float size = r * 1.15f, maxW = r * 1.55f;
+                    for (int i = 0; i < 12; i++)
+                    {
+                        using (Font probe = new Font("Segoe UI", size, FontStyle.Bold, GraphicsUnit.Pixel))
+                        {
+                            float w = g.MeasureString(label, probe, PointF.Empty, StringFormat.GenericTypographic).Width;
+                            if (w <= maxW) break;
+                            size *= Math.Max(0.6f, maxW / w);
+                        }
+                    }
+                    using (Font f = new Font("Segoe UI", size, FontStyle.Bold, GraphicsUnit.Pixel))
+                    {
+                        RectangleF tr = new RectangleF(rc.X - r, rc.Y, rc.Width + 2 * r, rc.Height); // wide box: never wraps
+                        tr.Offset(0, r * 0.04f);
+                        g.DrawString(label, f, txt, tr, sf);
+                    }
+                }
                 g.SmoothingMode = old;
             }
         }
     }
 
-    enum Tool { Select, Pen, Line, Arrow, Rect, Marker, Text, Number, Blur }
+    enum Tool { Select, Pen, Line, Arrow, Rect, Marker, Text, Number, Blur, Picker }
 
     // ---------------- Capture overlay ----------------
 
     class CaptureForm : Form
     {
-        readonly Bitmap shot;      // capture of all monitors
-        readonly Bitmap dimmed;    // the same capture, dimmed
+        Bitmap shot;      // capture of all monitors
+        Bitmap dimmed;    // the same capture, dimmed
         readonly Rectangle virt;
         readonly TrayApp app;
         readonly float scale;
@@ -467,21 +553,34 @@ namespace Snipper
         FlowLayoutPanel bar;
         readonly Dictionary<Tool, Button> toolButtons = new Dictionary<Tool, Button>();
         Button colorButton;
+        FlowLayoutPanel side;
+        Button timerBtn;
+        Tool toolBeforePicker = Tool.Pen;
+        Point mousePos = new Point(-1, -1);
         TextBox sizeBox;
         Label sizeUnit;
         readonly ToolTip tips = new ToolTip();
+
+        // Capture all monitors (also used again by the timer)
+        void GrabScreen()
+        {
+            Bitmap ns = new Bitmap(virt.Width, virt.Height, PixelFormat.Format32bppArgb);
+            using (Graphics g = Graphics.FromImage(ns))
+                g.CopyFromScreen(virt.Location, Point.Empty, virt.Size, CopyPixelOperation.SourceCopy);
+            Bitmap nd = new Bitmap(ns);
+            using (Graphics g = Graphics.FromImage(nd))
+            using (Brush b = new SolidBrush(Color.FromArgb(110, 0, 0, 0)))
+                g.FillRectangle(b, 0, 0, nd.Width, nd.Height);
+            if (shot != null) shot.Dispose();
+            if (dimmed != null) dimmed.Dispose();
+            shot = ns; dimmed = nd;
+        }
 
         public CaptureForm(TrayApp app)
         {
             this.app = app;
             virt = SystemInformation.VirtualScreen;
-            shot = new Bitmap(virt.Width, virt.Height, PixelFormat.Format32bppArgb);
-            using (Graphics g = Graphics.FromImage(shot))
-                g.CopyFromScreen(virt.Location, Point.Empty, virt.Size, CopyPixelOperation.SourceCopy);
-            dimmed = new Bitmap(shot);
-            using (Graphics g = Graphics.FromImage(dimmed))
-            using (Brush b = new SolidBrush(Color.FromArgb(110, 0, 0, 0)))
-                g.FillRectangle(b, 0, 0, dimmed.Width, dimmed.Height);
+            GrabScreen();
 
             color = Color.FromArgb(Settings.ColorArgb);
             penWidth = Math.Max(1, Math.Min(30, Settings.PenWidth));
@@ -585,6 +684,10 @@ namespace Snipper
             colorButton = MakeButton("", L.T("Колір", "Color"), delegate { PickColor(); });
             colorButton.BackColor = color;
             bar.Controls.Add(colorButton);
+            Button fontBtn = MakeButton("Aa", L.T("Шрифт для тексту", "Text font"), delegate { PickFont(); });
+            fontBtn.Font = new Font("Segoe UI", 13f * scale, FontStyle.Bold, GraphicsUnit.Pixel);
+            fontBtn.ForeColor = Color.FromArgb(0xC3, 0xC9, 0xD6);
+            bar.Controls.Add(fontBtn);
             bar.Controls.Add(MakeButton("−", L.T("Менше (або колесо миші вниз)", "Smaller (or scroll down)"), delegate { ChangeSize(-1); }));
             sizeBox = new TextBox();
             sizeBox.Width = (int)(40 * scale);
@@ -618,13 +721,43 @@ namespace Snipper
             closeBtn.ForeColor = Color.FromArgb(0xFF, 0x8A, 0x8A);
             bar.Controls.Add(closeBtn);
             Controls.Add(bar);
+
+            // Separate block to the right of the selection: pin, timer, color picker
+            side = new FlowLayoutPanel();
+            side.AutoSize = true;
+            side.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            side.FlowDirection = FlowDirection.TopDown;
+            side.WrapContents = false;
+            side.BackColor = bar.BackColor;
+            side.Padding = bar.Padding;
+            side.Visible = false;
+            side.Cursor = Cursors.Default;
+            side.Controls.Add(MakeIconButton("Pin", L.T("Закріпити поверх усіх вікон", "Pin on top of all windows"), delegate { PinToScreen(); }));
+            timerBtn = MakeIconButton("Timer", L.T("Таймер: зняти цю зону ще раз через кілька секунд", "Timer: capture this area again after a few seconds"), delegate { ShowTimerMenu(); });
+            side.Controls.Add(timerBtn);
+#if OCR
+            Button ocrBtn = MakeButton("OCR", L.T("Розпізнати текст: виділіть уривок мишею. Ctrl+T — одразу скопіювати весь текст",
+                                                  "Recognize text and select a passage with the mouse. Ctrl+T copies all text at once"), delegate { StartTextSelect(); });
+            ocrBtn.Font = new Font("Segoe UI", 10f * scale, FontStyle.Bold, GraphicsUnit.Pixel);
+            ocrBtn.ForeColor = Color.FromArgb(0xA8, 0xE6, 0xA1);
+            side.Controls.Add(ocrBtn);
+#endif
+            Button pick = MakeIconButton("Picker", L.T("Піпетка: клік — HEX, Shift+клік — RGB", "Color picker: click = HEX, Shift+click = RGB"), delegate { SetTool(Tool.Picker); });
+            toolButtons[Tool.Picker] = pick;
+            side.Controls.Add(pick);
+            Controls.Add(side);
             SetTool(Tool.Pen);
         }
 
         void SetTool(Tool t)
         {
             CommitText();
+#if OCR
+            if (ocr != null) { ocr = null; ocrAnchor = ocrFocus = -1; }
+#endif
+            if (t == Tool.Picker && tool != Tool.Picker) toolBeforePicker = tool;
             tool = t;
+            Invalidate();
             foreach (KeyValuePair<Tool, Button> kv in toolButtons)
                 kv.Value.BackColor = kv.Key == t ? BtnActive : BtnBack;
             Cursor = t == Tool.Text ? Cursors.IBeam : Cursors.Cross;
@@ -690,6 +823,9 @@ namespace Snipper
         {
             base.OnMouseWheel(e);
             if (sel.IsEmpty || textBox != null || selecting) return;
+#if OCR
+            if (ocr != null) return;
+#endif
             ChangeSize(e.Delta > 0 ? 1 : -1);
             if (current != null) // shape still being drawn (left button held) — change its width/strength right away
             {
@@ -700,23 +836,336 @@ namespace Snipper
 
         void PlaceToolbar()
         {
-            if (sel.IsEmpty) { bar.Visible = false; return; }
+            if (sel.IsEmpty) { bar.Visible = false; side.Visible = false; return; }
+            // limits = the monitor the selection is on (in form coordinates), not the whole virtual screen
+            Rectangle selScreen = new Rectangle(sel.X + virt.X, sel.Y + virt.Y, sel.Width, sel.Height);
+            Rectangle mon = Screen.FromRectangle(selScreen).Bounds;
+            mon.Offset(-virt.X, -virt.Y);
+            int gap = (int)(6 * scale);
+
+            // main bar: below → above → inside, at the bottom of the selection
             bar.Visible = true;
             Size s = bar.PreferredSize;
-            int gap = (int)(6 * scale);
             int x = sel.Right - s.Width;
             int y = sel.Bottom + gap;
-            if (y + s.Height > ClientSize.Height) y = sel.Top - s.Height - gap;
-            if (y < 0) y = sel.Bottom - s.Height - gap;
-            x = Math.Max(0, Math.Min(x, ClientSize.Width - s.Width));
+            if (y + s.Height > mon.Bottom) y = sel.Top - s.Height - gap;
+            if (y < mon.Top) y = sel.Bottom - s.Height - gap;
+            y = Math.Max(mon.Top, Math.Min(y, mon.Bottom - s.Height));
+            x = Math.Max(mon.Left, Math.Min(x, mon.Right - s.Width));
             bar.Location = new Point(x, y);
             bar.BringToFront();
+
+            // side block: right → left → inside, at the right edge of the selection
+            Size ss = side.PreferredSize;
+            int sx = sel.Right + gap;
+            if (sx + ss.Width > mon.Right) sx = sel.Left - ss.Width - gap;
+            if (sx < mon.Left) sx = sel.Right - ss.Width - gap;
+            sx = Math.Max(mon.Left, Math.Min(sx, mon.Right - ss.Width));
+            int sy = Math.Max(mon.Top, Math.Min(sel.Top, mon.Bottom - ss.Height));
+            // inside the selection: keep it clear of the main bar
+            Rectangle sideRect = new Rectangle(sx, sy, ss.Width, ss.Height);
+            if (sideRect.IntersectsWith(bar.Bounds))
+            {
+                int above = bar.Top - ss.Height - gap;
+                if (above >= mon.Top) sy = Math.Min(sy, above);
+                else sx = Math.Max(mon.Left, bar.Left - ss.Width - gap);
+            }
+            side.Location = new Point(sx, sy);
+            side.Visible = true;
+            side.BringToFront();
+        }
+
+        // ---------- new tools: color picker, pin, timer, font ----------
+        void DrawMagnifier(Graphics g)
+        {
+            int cells = 11, cell = (int)(10 * scale), box = cells * cell;
+            int mx = mousePos.X, my = mousePos.Y;
+            if (mx < 0 || my < 0 || mx >= shot.Width || my >= shot.Height) return;
+            Color c = shot.GetPixel(mx, my);
+            string hex = "#" + c.R.ToString("X2") + c.G.ToString("X2") + c.B.ToString("X2");
+            string rgb = c.R + ", " + c.G + ", " + c.B;
+            using (Font f = new Font("Segoe UI", 12f * scale, FontStyle.Bold, GraphicsUnit.Pixel))
+            {
+                int labelH = (int)(f.GetHeight(g) * 2 + 8 * scale);
+                int x = mx + (int)(20 * scale), y = my + (int)(20 * scale);
+                if (x + box > ClientSize.Width) x = mx - (int)(20 * scale) - box;
+                if (y + box + labelH > ClientSize.Height) y = my - (int)(20 * scale) - box - labelH;
+                Rectangle r = new Rectangle(x, y, box, box);
+                InterpolationMode im = g.InterpolationMode; PixelOffsetMode pm = g.PixelOffsetMode;
+                g.InterpolationMode = InterpolationMode.NearestNeighbor;
+                g.PixelOffsetMode = PixelOffsetMode.Half;
+                g.FillRectangle(Brushes.Black, r);
+                g.DrawImage(shot, r, new Rectangle(mx - cells / 2, my - cells / 2, cells, cells), GraphicsUnit.Pixel);
+                g.InterpolationMode = im; g.PixelOffsetMode = pm;
+                using (Pen grid = new Pen(Color.FromArgb(40, 255, 255, 255)))
+                    for (int i = 1; i < cells; i++)
+                    {
+                        g.DrawLine(grid, x + i * cell, y, x + i * cell, y + box);
+                        g.DrawLine(grid, x, y + i * cell, x + box, y + i * cell);
+                    }
+                Rectangle center = new Rectangle(x + (cells / 2) * cell, y + (cells / 2) * cell, cell, cell);
+                g.DrawRectangle(Pens.Black, Rectangle.Inflate(center, 1, 1));
+                g.DrawRectangle(Pens.White, center);
+                using (Pen border = new Pen(Color.FromArgb(0x6E, 0xA5, 0xFF), Math.Max(1f, scale)))
+                    g.DrawRectangle(border, r);
+                Rectangle lab = new Rectangle(x, y + box, box, labelH);
+                using (Brush bg = new SolidBrush(Color.FromArgb(235, 20, 20, 22))) g.FillRectangle(bg, lab);
+                using (Brush sw = new SolidBrush(c))
+                    g.FillRectangle(sw, x + 4 * scale, y + box + 4 * scale, 14 * scale, 14 * scale);
+                g.DrawString(hex, f, Brushes.White, x + 22 * scale, y + box + 2 * scale);
+                g.DrawString(rgb, f, Brushes.Gainsboro, x + 4 * scale, y + box + 2 * scale + f.GetHeight(g));
+            }
+        }
+
+        void PickPixel(Point at, bool asRgb)
+        {
+            if (at.X < 0 || at.Y < 0 || at.X >= shot.Width || at.Y >= shot.Height) return;
+            Color c = shot.GetPixel(at.X, at.Y);
+            string text = asRgb ? "rgb(" + c.R + ", " + c.G + ", " + c.B + ")"
+                                : "#" + c.R.ToString("X2") + c.G.ToString("X2") + c.B.ToString("X2");
+            try { Clipboard.SetText(text); } catch { }
+            // the picked color also becomes the drawing color
+            color = Color.FromArgb(255, c.R, c.G, c.B);
+            colorButton.BackColor = color;
+            Settings.ColorArgb = color.ToArgb();
+            app.Notify(L.T("Скопійовано колір: ", "Color copied: ") + text, null);
+            SetTool(toolBeforePicker);
+        }
+
+#if OCR
+        bool ocrBusy;
+        OcrData ocr;                 // not null = text-selection mode
+        int ocrAnchor = -1, ocrFocus = -1;
+        bool ocrDragging;
+
+        async System.Threading.Tasks.Task<OcrData> RunOcr()
+        {
+            Bitmap crop = new Bitmap(sel.Width, sel.Height, PixelFormat.Format32bppArgb);
+            using (Graphics g = Graphics.FromImage(crop))
+                g.DrawImage(shot, new Rectangle(0, 0, sel.Width, sel.Height), sel, GraphicsUnit.Pixel);
+            using (crop) return await OcrHelper.RecognizeAsync(crop, sel.Location);
+        }
+
+        // OCR button: recognize, then let the user select a passage with the mouse
+        async void StartTextSelect()
+        {
+            if (sel.IsEmpty || ocrBusy) return;
+            if (ocr != null) { CopyOcrSelection(); return; }
+            CommitText();
+            ocrBusy = true;
+            Cursor = Cursors.WaitCursor;
+            try
+            {
+                OcrData d = await RunOcr();
+                if (IsDisposed) return;
+                if (d.Words.Count == 0) { app.Notify(L.T("Текст не знайдено", "No text found"), null); return; }
+                ocr = d;
+                ocrAnchor = ocrFocus = -1;
+                Invalidate();
+            }
+            catch (Exception ex) { app.Notify(L.T("OCR не спрацював: ", "OCR failed: ") + ex.Message, null); }
+            finally
+            {
+                ocrBusy = false;
+                if (!IsDisposed) Cursor = ocr != null ? Cursors.IBeam : ToolCursor;
+            }
+        }
+
+        // Ctrl+T: copy all recognized text at once
+        async void RecognizeText()
+        {
+            if (sel.IsEmpty || ocrBusy) return;
+            if (ocr != null) { CopyText(ocr.All); return; }
+            CommitText();
+            ocrBusy = true;
+            Cursor = Cursors.WaitCursor;
+            try
+            {
+                OcrData d = await RunOcr();
+                if (IsDisposed) return;
+                if (d.Words.Count == 0) { app.Notify(L.T("Текст не знайдено", "No text found"), null); return; }
+                CopyText(d.All);
+            }
+            catch (Exception ex) { app.Notify(L.T("OCR не спрацював: ", "OCR failed: ") + ex.Message, null); }
+            finally
+            {
+                ocrBusy = false;
+                if (!IsDisposed) Cursor = ToolCursor;
+            }
+        }
+
+        void CopyText(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+            try { Clipboard.SetText(text); } catch { }
+            string preview = text.Replace("\r", " ").Replace("\n", " ");
+            if (preview.Length > 80) preview = preview.Substring(0, 80) + "…";
+            app.Notify(L.T("Текст скопійовано: ", "Text copied: ") + preview, null);
+            Close();
+        }
+
+        void CopyOcrSelection()
+        {
+            if (ocr == null) return;
+            if (ocrAnchor < 0) { CopyText(ocr.All); return; } // nothing selected — copy everything
+            CopyText(ocr.Join(Math.Min(ocrAnchor, ocrFocus), Math.Max(ocrAnchor, ocrFocus)));
+        }
+
+        void ExitTextSelect()
+        {
+            ocr = null;
+            ocrAnchor = ocrFocus = -1;
+            ocrDragging = false;
+            Cursor = ToolCursor;
+            Invalidate();
+        }
+
+        // Word under the point; if none, the closest word on the same line, else the closest overall
+        int WordAt(Point p)
+        {
+            if (ocr == null || ocr.Words.Count == 0) return -1;
+            int best = -1; double bestD = double.MaxValue;
+            for (int i = 0; i < ocr.Words.Count; i++)
+            {
+                RectangleF r = ocr.Words[i].R;
+                if (RectangleF.Inflate(r, 2, 2).Contains(p)) return i;
+                double dy = p.Y < r.Top ? r.Top - p.Y : p.Y > r.Bottom ? p.Y - r.Bottom : 0;
+                double dx = p.X < r.Left ? r.Left - p.X : p.X > r.Right ? p.X - r.Right : 0;
+                double d = dy * 4 + dx;   // prefer words on the same line
+                if (d < bestD) { bestD = d; best = i; }
+            }
+            return best;
+        }
+
+        void DrawOcr(Graphics g)
+        {
+            if (ocr == null) return;
+            int a = Math.Min(ocrAnchor, ocrFocus), b = Math.Max(ocrAnchor, ocrFocus);
+            using (Brush found = new SolidBrush(Color.FromArgb(38, 0x6E, 0xA5, 0xFF)))
+            using (Brush picked = new SolidBrush(Color.FromArgb(120, 0x6E, 0xA5, 0xFF)))
+                for (int i = 0; i < ocr.Words.Count; i++)
+                {
+                    RectangleF r = RectangleF.Inflate(ocr.Words[i].R, 2, 2);
+                    bool on = ocrAnchor >= 0 && i >= a && i <= b;
+                    g.FillRectangle(on ? picked : found, r);
+                    // fill the gap to the next word on the same line so the selection looks continuous
+                    if (on && i < b && i + 1 < ocr.Words.Count && ocr.Words[i + 1].Line == ocr.Words[i].Line)
+                    {
+                        RectangleF n = RectangleF.Inflate(ocr.Words[i + 1].R, 2, 2);
+                        if (n.Left > r.Right)
+                            g.FillRectangle(picked, r.Right, Math.Max(r.Top, n.Top), n.Left - r.Right, Math.Min(r.Bottom, n.Bottom) - Math.Max(r.Top, n.Top));
+                    }
+                }
+            string hint = L.T("Виділіть текст мишею  ·  Ctrl+C — копіювати  ·  Ctrl+A — усе  ·  Esc — назад",
+                              "Select text with the mouse  ·  Ctrl+C copy  ·  Ctrl+A all  ·  Esc back");
+            using (Font f = new Font("Segoe UI", 13f * scale, FontStyle.Regular, GraphicsUnit.Pixel))
+            {
+                SizeF ts = g.MeasureString(hint, f);
+                float x = sel.X + (sel.Width - ts.Width) / 2, y = sel.Y - ts.Height - 10 * scale;
+                if (y < 0) y = sel.Y + 6 * scale;
+                x = Math.Max(4, Math.Min(x, ClientSize.Width - ts.Width - 4));
+                using (Brush bg = new SolidBrush(Color.FromArgb(225, 20, 20, 22)))
+                    g.FillRectangle(bg, x - 8, y - 4, ts.Width + 16, ts.Height + 8);
+                g.DrawString(hint, f, Brushes.White, x, y);
+            }
+        }
+
+        protected override void OnMouseDoubleClick(MouseEventArgs e)
+        {
+            base.OnMouseDoubleClick(e);
+            if (ocr == null || e.Button != MouseButtons.Left) return;
+            int w = WordAt(e.Location);
+            if (w < 0) return;
+            int line = ocr.Words[w].Line, first = w, last = w;
+            while (first > 0 && ocr.Words[first - 1].Line == line) first--;
+            while (last < ocr.Words.Count - 1 && ocr.Words[last + 1].Line == line) last++;
+            ocrAnchor = first; ocrFocus = last;
+            ocrDragging = false;
+            Invalidate();
+        }
+#endif
+
+        void PickFont()
+        {
+            CommitText();
+            using (FontDialog d = new FontDialog())
+            {
+                d.ShowEffects = true;
+                d.ShowColor = false;
+                d.FontMustExist = true;
+                d.AllowVerticalFonts = false;
+                try { d.Font = new Font(Settings.TextFontName, 14f, (FontStyle)(Settings.TextFontStyle & 7)); } catch { }
+                TopMost = false;
+                if (d.ShowDialog(this) == DialogResult.OK)
+                {
+                    Settings.TextFontName = d.Font.FontFamily.Name;
+                    Settings.TextFontStyle = (int)(d.Font.Style & (FontStyle.Bold | FontStyle.Italic | FontStyle.Underline));
+                    app.Notify(L.T("Шрифт тексту: ", "Text font: ") + d.Font.FontFamily.Name + L.T(" (розмір — полем −/+)", " (size via the −/+ control)"), null);
+                    SetTool(Tool.Text);
+                }
+                TopMost = true;
+            }
+        }
+
+        void PinToScreen()
+        {
+            Bitmap b = Render();
+            if (b == null) return;
+            Point screenPos = new Point(virt.X + sel.X, virt.Y + sel.Y);
+            PinForm pf = new PinForm(b, screenPos, app);
+            pf.Show();
+            Close();
+        }
+
+        void ShowTimerMenu()
+        {
+            CommitText();
+            ContextMenuStrip m = new ContextMenuStrip();
+            foreach (int sec in new int[] { 3, 5, 10 })
+            {
+                int s2 = sec;
+                m.Items.Add(sec + L.T(" с", " s"), null, delegate { StartTimer(s2); });
+            }
+            m.Show(timerBtn, new Point(timerBtn.Width, 0));
+        }
+
+        void StartTimer(int seconds)
+        {
+            CommitText();
+            Rectangle area = sel;
+            Hide();
+            CountdownForm cd = new CountdownForm(seconds, new Rectangle(virt.X + area.X, virt.Y + area.Y, area.Width, area.Height));
+            cd.Finished += delegate (object o, EventArgs ev)
+            {
+                bool cancelled = cd.Cancelled;
+                cd.Close();
+                cd.Dispose();
+                if (!cancelled)
+                {
+                    Application.DoEvents();
+                    Thread.Sleep(120); // let the countdown window fully disappear
+                    GrabScreen();
+                }
+                Show();
+                Bounds = virt;
+                Activate();
+                Native.SetForegroundWindow(Handle);
+                PlaceToolbar();
+                Invalidate();
+            };
+            cd.Show();
         }
 
         // ---------- painting ----------
         protected override void OnPaintBackground(PaintEventArgs e) { }
 
         protected override void OnPaint(PaintEventArgs e)
+        {
+            PaintMain(e);
+            if (tool == Tool.Picker && !sel.IsEmpty && mousePos.X >= 0) DrawMagnifier(e.Graphics);
+        }
+
+        void PaintMain(PaintEventArgs e)
         {
             Graphics g = e.Graphics;
             g.DrawImageUnscaled(dimmed, 0, 0);
@@ -729,6 +1178,9 @@ namespace Snipper
                 if (current != null) current.Draw(g, shot);
                 DrawTextEditing(g);
                 g.Restore(st);
+#if OCR
+                DrawOcr(g);
+#endif
 
                 using (Pen p = new Pen(Color.FromArgb(0, 120, 215), Math.Max(1f, scale)))
                 {
@@ -811,16 +1263,39 @@ namespace Snipper
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);
+#if OCR
+            if (e.Button == MouseButtons.Right && ocr != null) { ExitTextSelect(); return; }
+#endif
             if (e.Button == MouseButtons.Right) { Close(); return; }
             if (e.Button != MouseButtons.Left) return;
             if (sizeBox.Focused) { ApplySizeBox(); Focus(); }
             CommitText();
+#if OCR
+            if (ocr != null)
+            {
+                int w = WordAt(e.Location);
+                if (w >= 0)
+                {
+                    if ((Control.ModifierKeys & Keys.Shift) != 0 && ocrAnchor >= 0) ocrFocus = w;
+                    else { ocrAnchor = w; ocrFocus = w; }
+                    ocrDragging = true;
+                    Invalidate();
+                }
+                return;
+            }
+#endif
+
+            if (tool == Tool.Picker)
+            {
+                PickPixel(e.Location, (Control.ModifierKeys & Keys.Shift) != 0);
+                return;
+            }
 
             int edges = HitEdges(e.Location);
             if (edges != 0) // dragging an edge or corner of the finished selection
             {
                 resizeEdges = edges;
-                bar.Visible = false;
+                bar.Visible = false; side.Visible = false;
                 return;
             }
 
@@ -832,7 +1307,7 @@ namespace Snipper
                 dragStart = e.Location;
                 dragEnd = e.Location;
                 sel = Rectangle.Empty;
-                bar.Visible = false;
+                bar.Visible = false; side.Visible = false;
                 Invalidate();
                 return;
             }
@@ -875,6 +1350,25 @@ namespace Snipper
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
+#if OCR
+            if (ocr != null)
+            {
+                if (Cursor != Cursors.IBeam) Cursor = Cursors.IBeam;
+                if (ocrDragging)
+                {
+                    int w = WordAt(e.Location);
+                    if (w >= 0 && w != ocrFocus) { ocrFocus = w; Invalidate(); }
+                }
+                return;
+            }
+#endif
+            if (tool == Tool.Picker && !selecting && resizeEdges == 0)
+            {
+                mousePos = e.Location;
+                if (Cursor != Cursors.Cross) Cursor = Cursors.Cross;
+                Invalidate();
+                return;
+            }
             if (resizeEdges != 0)
             {
                 int l = sel.Left, t = sel.Top, r = sel.Right, b = sel.Bottom;
@@ -918,6 +1412,22 @@ namespace Snipper
             else if (current != null)
             {
                 Point p = new Point(Math.Max(0, Math.Min(ClientSize.Width, e.X)), Math.Max(0, Math.Min(ClientSize.Height, e.Y)));
+                PenShape pen = current as PenShape;
+                if (pen != null && pen.Marker)
+                {
+                    bool shift = (Control.ModifierKeys & Keys.Shift) != 0;
+                    if (shift && !pen.Straight) { pen.Straight = true; }
+                    else if (!shift && pen.Straight)
+                    {
+                        // Shift released: carry on freehand from the end of the straight segment
+                        pen.Straight = false;
+                        Point a = pen.Points[0], b = pen.Points[pen.Points.Count - 1];
+                        pen.Points.Clear();
+                        int steps = Math.Max(2, (int)(Math.Sqrt((b.X - a.X) * (b.X - a.X) + (b.Y - a.Y) * (b.Y - a.Y)) / 12));
+                        for (int i = 0; i <= steps; i++)
+                            pen.Points.Add(new Point(a.X + (b.X - a.X) * i / steps, a.Y + (b.Y - a.Y) * i / steps));
+                    }
+                }
                 current.Update(p);
                 Invalidate();
             }
@@ -930,6 +1440,9 @@ namespace Snipper
         protected override void OnMouseUp(MouseEventArgs e)
         {
             base.OnMouseUp(e);
+#if OCR
+            if (ocr != null) { ocrDragging = false; return; }
+#endif
             if (resizeEdges != 0)
             {
                 resizeEdges = 0;
@@ -967,6 +1480,8 @@ namespace Snipper
             textShape.Color = color;
             textShape.Width = penWidth * scale;
             textShape.At = at;
+            textShape.FontName = Settings.TextFontName;
+            textShape.Style = (FontStyle)(Settings.TextFontStyle & 7);
             // The input box is hidden off-screen; text is drawn straight onto the screenshot, no backdrop
             textBox = new TextBox();
             textBox.Multiline = true;
@@ -1002,7 +1517,7 @@ namespace Snipper
         {
             if (textShape == null) return;
             textShape.Draw(g, shot);
-            using (Font f = new Font("Segoe UI", textShape.FontSize, FontStyle.Bold, GraphicsUnit.Pixel))
+            using (Font f = textShape.MakeFont())
             {
                 string[] lines = (textShape.Text ?? "").Replace("\r", "").Split('\n');
                 string last = lines[lines.Length - 1];
@@ -1098,6 +1613,19 @@ namespace Snipper
                 if (keyData == Keys.Escape) { CancelText(); return true; }
                 return base.ProcessCmdKey(ref msg, keyData);
             }
+#if OCR
+            if (ocr != null)
+            {
+                switch (keyData)
+                {
+                    case Keys.Escape: ExitTextSelect(); return true;
+                    case Keys.Control | Keys.C: CopyOcrSelection(); return true;
+                    case Keys.Control | Keys.A: ocrAnchor = 0; ocrFocus = ocr.Words.Count - 1; Invalidate(); return true;
+                    case Keys.Control | Keys.T: CopyText(ocr.All); return true;
+                }
+                return base.ProcessCmdKey(ref msg, keyData);
+            }
+#endif
             switch (keyData)
             {
                 case Keys.Escape: Close(); return true;
@@ -1105,6 +1633,9 @@ namespace Snipper
                 case Keys.Control | Keys.S: SaveToFolder(); return true;
                 case Keys.Control | Keys.Shift | Keys.S: SaveAs(); return true;
                 case Keys.Control | Keys.Z: Undo(); return true;
+#if OCR
+                case Keys.Control | Keys.T: RecognizeText(); return true;
+#endif
             }
             return base.ProcessCmdKey(ref msg, keyData);
         }
@@ -1127,6 +1658,9 @@ namespace Snipper
 
         void CopyToClipboard()
         {
+#if OCR
+            if (ocr != null) { CopyOcrSelection(); return; }
+#endif
             using (Bitmap b = Render())
             {
                 if (b == null) return;
@@ -1187,6 +1721,285 @@ namespace Snipper
     }
 
     // ---------------- Tray + hotkey ----------------
+
+#if OCR
+    // Text recognition with the OCR engine built into Windows 10/11 (Windows.Media.Ocr).
+    // Works offline; recognizes the languages whose OCR packs are installed in Windows.
+    class OcrWordBox
+    {
+        public string Text;
+        public RectangleF R;   // overlay coordinates
+        public int Line;
+    }
+
+    class OcrData
+    {
+        public List<OcrWordBox> Words = new List<OcrWordBox>();
+
+        // Words from..to (inclusive): spaces inside a line, line breaks between lines
+        public string Join(int from, int to)
+        {
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            for (int i = Math.Max(0, from); i <= to && i < Words.Count; i++)
+            {
+                if (i > from) sb.Append(Words[i].Line != Words[i - 1].Line ? "\r\n" : " ");
+                sb.Append(Words[i].Text);
+            }
+            return sb.ToString();
+        }
+        public string All { get { return Join(0, Words.Count - 1); } }
+    }
+
+    static class OcrHelper
+    {
+        // offset = where the bitmap sits on the overlay, so word boxes come back in overlay coordinates
+        public static async System.Threading.Tasks.Task<OcrData> RecognizeAsync(Bitmap bmp, Point offset)
+        {
+            global::Windows.Media.Ocr.OcrEngine engine = global::Windows.Media.Ocr.OcrEngine.TryCreateFromUserProfileLanguages();
+            if (engine == null)
+                throw new InvalidOperationException(L.T(
+                    "у Windows немає мовного пакета для розпізнавання тексту (Параметри → Час і мова → Мова та регіон → додайте мову).",
+                    "Windows has no OCR language pack installed (Settings → Time & language → Language & region → add a language)."));
+
+            // small text is recognized better when enlarged
+            int max = (int)global::Windows.Media.Ocr.OcrEngine.MaxImageDimension;
+            float k = 1f;
+            if (Math.Max(bmp.Width, bmp.Height) * 2 <= max && Math.Min(bmp.Width, bmp.Height) < 600) k = 2f;
+            Bitmap work = bmp;
+            if (k != 1f || Math.Max(bmp.Width, bmp.Height) > max)
+            {
+                if (Math.Max(bmp.Width, bmp.Height) * k > max) k = (float)max / Math.Max(bmp.Width, bmp.Height);
+                work = new Bitmap(Math.Max(1, (int)(bmp.Width * k)), Math.Max(1, (int)(bmp.Height * k)), PixelFormat.Format32bppArgb);
+                using (Graphics g = Graphics.FromImage(work))
+                {
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    g.DrawImage(bmp, new Rectangle(0, 0, work.Width, work.Height));
+                }
+            }
+            try
+            {
+                // Pixels go to Windows directly (no streams/decoders) — avoids the System.Runtime.WindowsRuntime helpers
+                Rectangle all = new Rectangle(0, 0, work.Width, work.Height);
+                BitmapData bd = work.LockBits(all, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+                byte[] px = new byte[work.Width * work.Height * 4];
+                try
+                {
+                    for (int y = 0; y < work.Height; y++)
+                        Marshal.Copy(new IntPtr(bd.Scan0.ToInt64() + (long)y * bd.Stride), px, y * work.Width * 4, work.Width * 4);
+                }
+                finally { work.UnlockBits(bd); }
+                global::Windows.Storage.Streams.IBuffer buf = global::Windows.Security.Cryptography.CryptographicBuffer.CreateFromByteArray(px);
+                global::Windows.Graphics.Imaging.SoftwareBitmap sb = global::Windows.Graphics.Imaging.SoftwareBitmap.CreateCopyFromBuffer(
+                    buf, global::Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8, work.Width, work.Height,
+                    global::Windows.Graphics.Imaging.BitmapAlphaMode.Premultiplied);
+                global::Windows.Media.Ocr.OcrResult res = await AsTask(engine.RecognizeAsync(sb));
+                OcrData data = new OcrData();
+                int li = 0;
+                foreach (global::Windows.Media.Ocr.OcrLine line in res.Lines)
+                {
+                    foreach (global::Windows.Media.Ocr.OcrWord w in line.Words)
+                    {
+                        global::Windows.Foundation.Rect br = w.BoundingRect;
+                        OcrWordBox wb = new OcrWordBox();
+                        wb.Text = w.Text;
+                        wb.Line = li;
+                        wb.R = new RectangleF((float)(br.X / k) + offset.X, (float)(br.Y / k) + offset.Y,
+                                              (float)(br.Width / k), (float)(br.Height / k));
+                        data.Words.Add(wb);
+                    }
+                    li++;
+                }
+                return data;
+            }
+            finally
+            {
+                if (work != bmp) work.Dispose();
+            }
+        }
+
+        // Our own await for WinRT async operations (no dependency on System.Runtime.WindowsRuntime.dll)
+        static System.Threading.Tasks.Task<T> AsTask<T>(global::Windows.Foundation.IAsyncOperation<T> op)
+        {
+            System.Threading.Tasks.TaskCompletionSource<T> tcs = new System.Threading.Tasks.TaskCompletionSource<T>();
+            op.Completed = new global::Windows.Foundation.AsyncOperationCompletedHandler<T>(delegate (global::Windows.Foundation.IAsyncOperation<T> o, global::Windows.Foundation.AsyncStatus st)
+            {
+                if (st == global::Windows.Foundation.AsyncStatus.Completed) tcs.TrySetResult(o.GetResults());
+                else if (st == global::Windows.Foundation.AsyncStatus.Error)
+                    tcs.TrySetException(((global::Windows.Foundation.IAsyncInfo)o).ErrorCode ?? new Exception("OCR error"));
+                else tcs.TrySetCanceled();
+            });
+            return tcs.Task;
+        }
+    }
+#endif
+
+    // A screenshot pinned on top of all windows. Drag to move, wheel to zoom, Ctrl+wheel for opacity.
+    class PinForm : Form
+    {
+        readonly Bitmap img;
+        readonly TrayApp app;
+        float zoom = 1f;
+        Point dragOffset;
+        bool dragging;
+
+        public PinForm(Bitmap image, Point location, TrayApp app)
+        {
+            img = image;
+            this.app = app;
+            FormBorderStyle = FormBorderStyle.None;
+            StartPosition = FormStartPosition.Manual;
+            AutoScaleMode = AutoScaleMode.None;
+            ShowInTaskbar = false;
+            TopMost = true;
+            KeyPreview = true;
+            DoubleBuffered = true;
+            Cursor = Cursors.SizeAll;
+            Location = location;
+            ClientSize = img.Size;
+            Text = "Snipper";
+
+            ContextMenuStrip m = new ContextMenuStrip();
+            m.Items.Add(L.T("Копіювати", "Copy"), null, delegate { try { Clipboard.SetImage(img); } catch { } });
+            m.Items.Add(L.T("Зберегти в папку", "Save to folder"), null, delegate { Save(); });
+            m.Items.Add(L.T("Справжній розмір", "Actual size"), null, delegate { SetZoom(1f, Point.Empty); });
+            m.Items.Add(new ToolStripSeparator());
+            m.Items.Add(L.T("Закрити", "Close"), null, delegate { Close(); });
+            ContextMenuStrip = m;
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == Native.WM_DPICHANGED) { m.Result = IntPtr.Zero; return; }
+            base.WndProc(ref m);
+        }
+
+        void Save()
+        {
+            string folder = Settings.SaveFolder;
+            try
+            {
+                Directory.CreateDirectory(folder);
+                string path = Path.Combine(folder, Settings.NextFreeName(folder));
+                img.Save(path, ImageFormat.Png);
+                app.Notify(L.T("Збережено: ", "Saved: ") + Path.GetFileName(path), path);
+            }
+            catch (Exception ex) { app.Notify(L.T("Не вдалося зберегти: ", "Couldn't save: ") + ex.Message, null); }
+        }
+
+        void SetZoom(float z, Point anchor)
+        {
+            z = Math.Max(0.1f, Math.Min(5f, z));
+            Size old = ClientSize;
+            Size ns = new Size(Math.Max(16, (int)(img.Width * z)), Math.Max(16, (int)(img.Height * z)));
+            // keep the point under the cursor in place
+            int nx = Left + anchor.X - anchor.X * ns.Width / Math.Max(1, old.Width);
+            int ny = Top + anchor.Y - anchor.Y * ns.Height / Math.Max(1, old.Height);
+            zoom = z;
+            Bounds = new Rectangle(nx, ny, ns.Width, ns.Height);
+            Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.InterpolationMode = zoom == 1f ? InterpolationMode.NearestNeighbor : InterpolationMode.HighQualityBicubic;
+            e.Graphics.PixelOffsetMode = PixelOffsetMode.Half;
+            e.Graphics.DrawImage(img, ClientRectangle);
+            using (Pen p = new Pen(Color.FromArgb(0x6E, 0xA5, 0xFF)))
+                e.Graphics.DrawRectangle(p, 0, 0, ClientSize.Width - 1, ClientSize.Height - 1);
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+            if (e.Button == MouseButtons.Left) { dragging = true; dragOffset = e.Location; }
+        }
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            if (dragging) Location = new Point(Cursor.Position.X - dragOffset.X, Cursor.Position.Y - dragOffset.Y);
+        }
+        protected override void OnMouseUp(MouseEventArgs e) { base.OnMouseUp(e); dragging = false; }
+        protected override void OnMouseDoubleClick(MouseEventArgs e) { base.OnMouseDoubleClick(e); if (e.Button == MouseButtons.Left) Close(); }
+        protected override void OnMouseWheel(MouseEventArgs e)
+        {
+            base.OnMouseWheel(e);
+            if ((ModifierKeys & Keys.Control) != 0)
+                Opacity = Math.Max(0.2, Math.Min(1.0, Opacity + (e.Delta > 0 ? 0.1 : -0.1)));
+            else
+                SetZoom(zoom * (e.Delta > 0 ? 1.1f : 1f / 1.1f), e.Location);
+        }
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            if (keyData == Keys.Escape) { Close(); return true; }
+            if (keyData == (Keys.Control | Keys.C)) { try { Clipboard.SetImage(img); } catch { } return true; }
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) img.Dispose();
+            base.Dispose(disposing);
+        }
+    }
+
+    // Small countdown badge shown while the timer runs. Click it to cancel.
+    class CountdownForm : Form
+    {
+        int left;
+        readonly System.Windows.Forms.Timer t = new System.Windows.Forms.Timer();
+        public bool Cancelled;
+        public event EventHandler Finished;
+
+        public CountdownForm(int seconds, Rectangle area)
+        {
+            left = seconds;
+            FormBorderStyle = FormBorderStyle.None;
+            StartPosition = FormStartPosition.Manual;
+            AutoScaleMode = AutoScaleMode.None;
+            ShowInTaskbar = false;
+            TopMost = true;
+            DoubleBuffered = true;
+            BackColor = Color.FromArgb(32, 32, 35);
+            Opacity = 0.9;
+            Cursor = Cursors.Hand;
+            float sc;
+            using (Graphics g = CreateGraphics()) sc = Math.Max(1f, g.DpiX / 96f);
+            int sz = (int)(56 * sc);
+            Size = new Size(sz, sz);
+            // just outside the top-right corner of the area so it never ends up in the shot
+            int x = area.Right + (int)(8 * sc), y = area.Top;
+            Rectangle wa = Screen.FromRectangle(area).WorkingArea;
+            if (x + sz > wa.Right) x = area.Left - sz - (int)(8 * sc);
+            if (x < wa.Left) x = wa.Left;
+            Location = new Point(x, y);
+            using (GraphicsPath gp = new GraphicsPath()) { gp.AddEllipse(0, 0, sz, sz); Region = new Region(gp); }
+            t.Interval = 1000;
+            t.Tick += delegate
+            {
+                left--;
+                if (left <= 0) { t.Stop(); Hide(); if (Finished != null) Finished(this, EventArgs.Empty); }
+                else Invalidate();
+            };
+            Click += delegate { t.Stop(); Cancelled = true; Hide(); if (Finished != null) Finished(this, EventArgs.Empty); };
+        }
+
+        protected override void OnShown(EventArgs e) { base.OnShown(e); t.Start(); }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            using (Pen p = new Pen(Color.FromArgb(0x8E, 0xDC, 0xF0), Width * 0.06f))
+                g.DrawEllipse(p, Width * 0.05f, Width * 0.05f, Width * 0.9f, Height * 0.9f);
+            using (Font f = new Font("Segoe UI", Height * 0.42f, FontStyle.Bold, GraphicsUnit.Pixel))
+            using (StringFormat sf = new StringFormat())
+            {
+                sf.Alignment = StringAlignment.Center; sf.LineAlignment = StringAlignment.Center;
+                g.DrawString(left.ToString(CultureInfo.InvariantCulture), f, Brushes.White, ClientRectangle, sf);
+            }
+        }
+
+        protected override void Dispose(bool disposing) { if (disposing) t.Dispose(); base.Dispose(disposing); }
+    }
 
     class HotkeyWindow : NativeWindow, IDisposable
     {
@@ -1327,6 +2140,12 @@ namespace Snipper
             langItem.DropDownItems.Add(ukItem);
             langItem.DropDownItems.Add(enItem);
             menu.Items.Add(langItem);
+            ToolStripItem unpinItem = menu.Items.Add("", null, delegate
+            {
+                List<Form> pins = new List<Form>();
+                foreach (Form f in Application.OpenForms) if (f is PinForm) pins.Add(f);
+                foreach (Form f in pins) f.Close();
+            });
             menu.Items.Add(new ToolStripSeparator());
             ToolStripItem exitItem = menu.Items.Add("", null, delegate { ExitThread(); });
             menu.Opening += delegate
@@ -1336,6 +2155,10 @@ namespace Snipper
                 chooseItem.Text = L.T("Вибрати папку для збереження…", "Choose save folder…");
                 autostartItem.Text = L.T("Запускати разом із Windows", "Start with Windows");
                 exitItem.Text = L.T("Вихід", "Exit");
+                int pins = 0;
+                foreach (Form f in Application.OpenForms) if (f is PinForm) pins++;
+                unpinItem.Text = L.T("Закрити всі закріплені знімки", "Close all pinned shots") + " (" + pins + ")";
+                unpinItem.Visible = pins > 0;
                 ukItem.Checked = !L.En;
                 enItem.Checked = L.En;
                 autostartItem.Checked = Settings.Autostart;
