@@ -16,6 +16,8 @@ A lightweight screenshot tool for Windows. Press **Print Screen**, drag over an 
 - **Timer:** pick 3, 5 or 10 seconds. Snipper hides and then captures the same area again, so you have time to open a menu or position the cursor.
 - **Text recognition (OCR):** finds the text in the selection, fully offline, using the OCR built into Windows 10/11. Select words with the mouse like in a PDF (double-click selects a line, Shift+click extends, Ctrl+A selects all), then Ctrl+C to copy. Ctrl+T copies all the text at once. It recognizes the languages that have a language pack installed in Windows.
 - **Color picker:** a magnifier with the color code follows the cursor. Click to copy HEX (`#RRGGBB`), Shift+click to copy RGB. The picked color becomes the drawing color.
+- **QR codes:** if the selection contains a QR code, a bar with its contents appears under the frame. For a link, it shows the domain in large type so you can see where it leads; click it or **Open** to open it in the browser. For anything else (text, Wi-Fi, contact…), use **Copy**. Links never open on their own.
+- **Repeat last area** (↻ or Ctrl+R): puts the frame exactly where your last saved, copied or pinned screenshot was, with a fresh image inside. Handy for grabbing video frames from the same spot. Also available from the tray menu.
 - **Color and width:** use **−/+**, the mouse wheel, or type a number and press Enter. For blur, the same controls set the strength (1–10). While you're dragging a shape, the mouse wheel changes the width of that shape.
 - **Custom hotkey:** any single key (F1, Print Screen…) or a combo with Ctrl/Alt/Shift/Win, including system ones like Win+Shift+S.
 
@@ -28,6 +30,7 @@ A lightweight screenshot tool for Windows. Press **Print Screen**, drag over an 
 | Ctrl+S | Save to folder (`Screen_01.png`, `Screen_02.png`… using the first free name) |
 | Ctrl+Shift+S | Save as… |
 | Ctrl+Z | Undo |
+| Ctrl+R | Repeat last area |
 | Esc / right-click | Close |
 
 Screenshots are saved to `Pictures\Screenshots` by default. To change the folder, right-click the tray icon and choose **Choose save folder…**
@@ -79,6 +82,8 @@ Upgrading from the old **Screenshoter**? Just build and run Snipper. It moves yo
 - **Таймер:** 3, 5 або 10 секунд. Snipper ховається, а потім знімає ту саму зону ще раз, щоб ви встигли відкрити меню чи навести курсор.
 - **Розпізнавання тексту (OCR):** знаходить текст у виділенні, повністю офлайн, вбудованим у Windows 10/11 розпізнаванням. Виділяйте слова мишею, як у PDF (подвійний клік — рядок, Shift+клік — розширити, Ctrl+A — усе), і копіюйте Ctrl+C. Ctrl+T одразу копіює весь текст. Розпізнає мови, для яких у Windows встановлено мовний пакет.
 - **Піпетка:** біля курсора лупа з кодом кольору. Клік копіює HEX (`#RRGGBB`), Shift+клік — RGB. Вибраний колір одразу стає кольором для малювання.
+- **QR-коди:** якщо у виділенні є QR-код, під рамкою з'являється плашка з його вмістом. Для посилання великим шрифтом видно домен, тобто куди веде код; клік по ньому або **Відкрити** відкриває його в браузері. Для іншого вмісту (текст, Wi-Fi, контакт…) є кнопка **Копіювати**. Посилання ніколи не відкриваються самі.
+- **Повторити попередню зону** (↻ або Ctrl+R): рамка стає точно там, де був останній збережений, скопійований чи закріплений скріншот, а зображення в ній свіже. Зручно знімати кадри відео з тієї самої області. Також є в меню трею.
 - **Колір і товщина:** кнопки **−/+**, колесо миші або впишіть число й натисніть Enter. Для розмиття ті самі кнопки змінюють силу (1–10). Поки тягнете фігуру, колесо миші змінює товщину саме цієї фігури.
 - **Своя гаряча клавіша:** будь-яка одна клавіша (F1, Print Screen…) або поєднання з Ctrl/Alt/Shift/Win, зокрема системні, як-от Win+Shift+S.
 
@@ -91,6 +96,7 @@ Upgrading from the old **Screenshoter**? Just build and run Snipper. It moves yo
 | Ctrl+S | Зберегти в папку (`Screen_01.png`, `Screen_02.png`…, перша вільна назва) |
 | Ctrl+Shift+S | Зберегти як… |
 | Ctrl+Z | Скасувати останню дію |
+| Ctrl+R | Повторити попередню зону |
 | Esc / права кнопка | Закрити |
 
 Скріншоти за замовчуванням зберігаються в `Зображення\Screenshots`. Щоб змінити папку, клацніть ПКМ по значку й оберіть **Вибрати папку для збереження…**

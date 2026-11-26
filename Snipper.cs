@@ -18,7 +18,7 @@ using Microsoft.Win32;
 
 [assembly: System.Reflection.AssemblyTitle("Snipper")]
 [assembly: System.Reflection.AssemblyProduct("Snipper")]
-[assembly: System.Reflection.AssemblyVersion("2.4.0.0")]
+[assembly: System.Reflection.AssemblyVersion("2.6.0.0")]
 
 namespace Snipper
 {
@@ -220,6 +220,20 @@ namespace Snipper
             using (RegistryKey k = Registry.CurrentUser.CreateSubKey(Key)) k.SetValue(name, v);
         }
         // Font for the Text tool: family + style (1 bold, 2 italic, 4 underline). Size comes from the size control.
+        // Last area that was copied/saved/pinned, in screen coordinates ("x,y,w,h")
+        public static Rectangle LastRegion
+        {
+            get
+            {
+                string[] p = GetStr("LastRegion", "").Split(',');
+                int x, y, w, h;
+                if (p.Length == 4 && int.TryParse(p[0], out x) && int.TryParse(p[1], out y) && int.TryParse(p[2], out w) && int.TryParse(p[3], out h))
+                    return new Rectangle(x, y, w, h);
+                return Rectangle.Empty;
+            }
+            set { SetStr("LastRegion", value.X + "," + value.Y + "," + value.Width + "," + value.Height); }
+        }
+
         public static string TextFontName { get { return GetStr("TextFont", "Segoe UI"); } set { SetStr("TextFont", value); } }
         public static int TextFontStyle { get { return GetInt("TextFontStyle", (int)FontStyle.Bold); } set { SetInt("TextFontStyle", value); } }
 
@@ -554,6 +568,10 @@ namespace Snipper
         readonly Dictionary<Tool, Button> toolButtons = new Dictionary<Tool, Button>();
         Button colorButton;
         FlowLayoutPanel side;
+        FlowLayoutPanel qrPanel;          // pop-up with QR codes found in the selection
+        int shotVersion;                  // bumps every time the screen is re-captured
+        Rectangle qrScannedSel = Rectangle.Empty;
+        int qrScannedVersion = -1, qrGen;
         Button timerBtn;
         Tool toolBeforePicker = Tool.Pen;
         Point mousePos = new Point(-1, -1);
@@ -564,7 +582,9 @@ namespace Snipper
         // Capture all monitors (also used again by the timer)
         void GrabScreen()
         {
-            Bitmap ns = new Bitmap(virt.Width, virt.Height, PixelFormat.Format32bppArgb);
+            // 32bppRgb, not Argb: video players / GPU-accelerated windows (Premiere, browsers) often leave
+            // garbage in the alpha channel, which turned into transparent "holes" in saved PNGs
+            Bitmap ns = new Bitmap(virt.Width, virt.Height, PixelFormat.Format32bppRgb);
             using (Graphics g = Graphics.FromImage(ns))
                 g.CopyFromScreen(virt.Location, Point.Empty, virt.Size, CopyPixelOperation.SourceCopy);
             Bitmap nd = new Bitmap(ns);
@@ -574,6 +594,7 @@ namespace Snipper
             if (shot != null) shot.Dispose();
             if (dimmed != null) dimmed.Dispose();
             shot = ns; dimmed = nd;
+            shotVersion++;
         }
 
         public CaptureForm(TrayApp app)
@@ -735,6 +756,10 @@ namespace Snipper
             side.Controls.Add(MakeIconButton("Pin", L.T("Закріпити поверх усіх вікон", "Pin on top of all windows"), delegate { PinToScreen(); }));
             timerBtn = MakeIconButton("Timer", L.T("Таймер: зняти цю зону ще раз через кілька секунд", "Timer: capture this area again after a few seconds"), delegate { ShowTimerMenu(); });
             side.Controls.Add(timerBtn);
+            Button repeatBtn = MakeButton("↻", L.T("Повторити попередню зону (Ctrl+R)", "Repeat previous area (Ctrl+R)"), delegate { RepeatLastRegion(); });
+            repeatBtn.ForeColor = Color.FromArgb(0xA8, 0xE6, 0xA1);
+            repeatBtn.Font = new Font("Segoe UI Symbol", 18f * scale, FontStyle.Bold, GraphicsUnit.Pixel);
+            side.Controls.Add(repeatBtn);
 #if OCR
             Button ocrBtn = MakeButton("OCR", L.T("Розпізнати текст: виділіть уривок мишею. Ctrl+T — одразу скопіювати весь текст",
                                                   "Recognize text and select a passage with the mouse. Ctrl+T copies all text at once"), delegate { StartTextSelect(); });
@@ -746,6 +771,17 @@ namespace Snipper
             toolButtons[Tool.Picker] = pick;
             side.Controls.Add(pick);
             Controls.Add(side);
+
+            qrPanel = new FlowLayoutPanel();
+            qrPanel.AutoSize = true;
+            qrPanel.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            qrPanel.FlowDirection = FlowDirection.TopDown;
+            qrPanel.WrapContents = false;
+            qrPanel.BackColor = bar.BackColor;
+            qrPanel.Padding = new Padding((int)(8 * scale));
+            qrPanel.Visible = false;
+            qrPanel.Cursor = Cursors.Default;
+            Controls.Add(qrPanel);
             SetTool(Tool.Pen);
         }
 
@@ -836,7 +872,7 @@ namespace Snipper
 
         void PlaceToolbar()
         {
-            if (sel.IsEmpty) { bar.Visible = false; side.Visible = false; return; }
+            if (sel.IsEmpty) { bar.Visible = false; side.Visible = false; qrPanel.Visible = false; return; }
             // limits = the monitor the selection is on (in form coordinates), not the whole virtual screen
             Rectangle selScreen = new Rectangle(sel.X + virt.X, sel.Y + virt.Y, sel.Width, sel.Height);
             Rectangle mon = Screen.FromRectangle(selScreen).Bounds;
@@ -873,6 +909,154 @@ namespace Snipper
             side.Location = new Point(sx, sy);
             side.Visible = true;
             side.BringToFront();
+
+            if (sel != qrScannedSel || shotVersion != qrScannedVersion) StartQrScan();
+            else PlaceQrPanel();
+        }
+
+        // ---------- QR codes ----------
+        void StartQrScan()
+        {
+            qrScannedSel = sel; qrScannedVersion = shotVersion;
+            int gen = ++qrGen;
+            qrPanel.Visible = false;
+            if (sel.Width < 21 || sel.Height < 21) return;
+            Bitmap crop = new Bitmap(sel.Width, sel.Height, PixelFormat.Format32bppArgb);
+            using (Graphics g = Graphics.FromImage(crop))
+                g.DrawImage(shot, new Rectangle(0, 0, sel.Width, sel.Height), sel, GraphicsUnit.Pixel);
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                List<string> found;
+                try { found = QrReader.Decode(crop); } catch { found = new List<string>(); }
+                finally { crop.Dispose(); }
+                try
+                {
+                    if (!IsDisposed && IsHandleCreated)
+                        BeginInvoke((MethodInvoker)delegate { if (gen == qrGen && !IsDisposed) ShowQr(found); });
+                }
+                catch { }
+            });
+        }
+
+        static bool IsWebLink(string t)
+        {
+            Uri u;
+            return Uri.TryCreate(t.Trim(), UriKind.Absolute, out u) && (u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps);
+        }
+
+        void ShowQr(List<string> found)
+        {
+            qrPanel.SuspendLayout();
+            foreach (Control c in qrPanel.Controls) c.Dispose();
+            qrPanel.Controls.Clear();
+            if (found.Count == 0 || sel.IsEmpty) { qrPanel.ResumeLayout(); qrPanel.Visible = false; return; }
+            int maxW = (int)(460 * scale);
+            Font small = new Font("Segoe UI", 12f * scale, FontStyle.Regular, GraphicsUnit.Pixel);
+            Font bold = new Font("Segoe UI", 14f * scale, FontStyle.Bold, GraphicsUnit.Pixel);
+            foreach (string raw in found)
+            {
+                string text = raw.Trim();
+                bool web = IsWebLink(text);
+                Label head = new Label();
+                head.AutoSize = true;
+                head.MaximumSize = new Size(maxW, 0);
+                head.ForeColor = Color.FromArgb(0xA8, 0xE6, 0xA1);
+                head.Font = small;
+                head.Margin = new Padding(0, 0, 0, (int)(2 * scale));
+                head.Text = web ? L.T("QR-код · посилання на", "QR code · link to") : L.T("QR-код · текст", "QR code · text");
+                qrPanel.Controls.Add(head);
+                if (web)
+                {
+                    // the domain is shown big and bold so it's obvious where the code leads
+                    Label host = new Label();
+                    host.AutoSize = true;
+                    host.MaximumSize = new Size(maxW, 0);
+                    host.ForeColor = Color.White;
+                    host.Font = bold;
+                    host.Text = new Uri(text).Host;
+                    qrPanel.Controls.Add(host);
+                }
+                Label body = new Label();
+                body.AutoSize = true;
+                body.MaximumSize = new Size(maxW, (int)(80 * scale));
+                body.AutoEllipsis = true;
+                body.ForeColor = web ? Color.FromArgb(0x6E, 0xA5, 0xFF) : Color.Gainsboro;
+                body.Font = small;
+                body.Text = text.Length > 600 ? text.Substring(0, 600) + "…" : text;
+                body.UseMnemonic = false;
+                tips.SetToolTip(body, text.Length > 2000 ? text.Substring(0, 2000) + "…" : text);
+                if (web) { body.Cursor = Cursors.Hand; body.Click += delegate { OpenLink(text); }; }
+                qrPanel.Controls.Add(body);
+
+                FlowLayoutPanel row = new FlowLayoutPanel();
+                row.AutoSize = true;
+                row.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+                row.WrapContents = false;
+                row.Margin = new Padding(0, (int)(6 * scale), 0, (int)(10 * scale));
+                if (web) row.Controls.Add(QrButton(L.T("Відкрити", "Open"), delegate { OpenLink(text); }));
+                row.Controls.Add(QrButton(L.T("Копіювати", "Copy"), delegate
+                {
+                    try { Clipboard.SetText(text); } catch { }
+                    app.Notify(L.T("Скопійовано з QR-коду", "Copied from the QR code"), null);
+                    Close();
+                }));
+                qrPanel.Controls.Add(row);
+            }
+            qrPanel.ResumeLayout();
+            qrPanel.Visible = true;
+            PlaceQrPanel();
+        }
+
+        Button QrButton(string text, EventHandler click)
+        {
+            Button b = new Button();
+            b.Text = text;
+            b.AutoSize = true;
+            b.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            b.Padding = new Padding((int)(8 * scale), (int)(2 * scale), (int)(8 * scale), (int)(2 * scale));
+            b.Margin = new Padding(0, 0, (int)(6 * scale), 0);
+            b.FlatStyle = FlatStyle.Flat;
+            b.FlatAppearance.BorderSize = 0;
+            b.BackColor = BtnBack;
+            b.FlatAppearance.MouseOverBackColor = Color.FromArgb(70, 70, 76);
+            b.ForeColor = Color.White;
+            b.Font = new Font("Segoe UI", 13f * scale, FontStyle.Regular, GraphicsUnit.Pixel);
+            b.Cursor = Cursors.Hand;
+            b.TabStop = false;
+            b.Click += click;
+            return b;
+        }
+
+        void OpenLink(string url)
+        {
+            if (!IsWebLink(url)) return; // only http/https links are ever opened
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url.Trim()) { UseShellExecute = true }); }
+            catch (Exception ex) { app.Notify(L.T("Не вдалося відкрити посилання: ", "Couldn't open the link: ") + ex.Message, null); return; }
+            Close(); // the overlay would cover the browser otherwise
+        }
+
+        // below the main bar → above the selection → inside it, within the selection's monitor
+        void PlaceQrPanel()
+        {
+            if (!qrPanel.Visible || qrPanel.Controls.Count == 0 || sel.IsEmpty) return;
+            Rectangle selScreen = new Rectangle(sel.X + virt.X, sel.Y + virt.Y, sel.Width, sel.Height);
+            Rectangle mon = Screen.FromRectangle(selScreen).Bounds;
+            mon.Offset(-virt.X, -virt.Y);
+            int gap = (int)(6 * scale);
+            Size qs = qrPanel.PreferredSize;
+            int x = Math.Max(mon.Left, Math.Min(sel.Left, mon.Right - qs.Width));
+            int y = Math.Max(bar.Bottom, sel.Bottom) + gap;
+            if (y + qs.Height > mon.Bottom) y = sel.Top - qs.Height - gap;
+            if (y < mon.Top) y = sel.Top + gap;
+            y = Math.Max(mon.Top, Math.Min(y, mon.Bottom - qs.Height));
+            Rectangle r = new Rectangle(x, y, qs.Width, qs.Height);
+            if (r.IntersectsWith(bar.Bounds) || r.IntersectsWith(side.Bounds))
+            {
+                int alt = Math.Max(mon.Left, Math.Min(bar.Left - qs.Width - gap, mon.Right - qs.Width));
+                if (!new Rectangle(alt, y, qs.Width, qs.Height).IntersectsWith(bar.Bounds)) x = alt;
+            }
+            qrPanel.Location = new Point(x, y);
+            qrPanel.BringToFront();
         }
 
         // ---------- new tools: color picker, pin, timer, font ----------
@@ -1107,8 +1291,34 @@ namespace Snipper
             }
         }
 
+        // Remember the current area so it can be reused with "Repeat previous area"
+        void RememberRegion()
+        {
+            if (!sel.IsEmpty) Settings.LastRegion = new Rectangle(sel.X + virt.X, sel.Y + virt.Y, sel.Width, sel.Height);
+        }
+
+        // Put the selection exactly where the last copied/saved area was (the screen image is fresh)
+        public void RepeatLastRegion()
+        {
+            CommitText();
+            Rectangle r = Settings.LastRegion;
+            if (r.IsEmpty) { app.Notify(L.T("Ще немає попередньої зони: спершу збережіть або скопіюйте скріншот.", "No previous area yet: save or copy a screenshot first."), null); return; }
+            r.Offset(-virt.X, -virt.Y);
+            r.Intersect(ClientRectangle);
+            if (r.Width < 4 || r.Height < 4) { app.Notify(L.T("Попередня зона зараз поза екраном.", "The previous area is off-screen now."), null); return; }
+#if OCR
+            if (ocr != null) { ocr = null; ocrAnchor = ocrFocus = -1; }
+#endif
+            sel = r;
+            selecting = false;
+            if (tool == Tool.Select) SetTool(Tool.Pen);
+            PlaceToolbar();
+            Invalidate();
+        }
+
         void PinToScreen()
         {
+            RememberRegion();
             Bitmap b = Render();
             if (b == null) return;
             Point screenPos = new Point(virt.X + sel.X, virt.Y + sel.Y);
@@ -1295,7 +1505,7 @@ namespace Snipper
             if (edges != 0) // dragging an edge or corner of the finished selection
             {
                 resizeEdges = edges;
-                bar.Visible = false; side.Visible = false;
+                bar.Visible = false; side.Visible = false; qrPanel.Visible = false;
                 return;
             }
 
@@ -1307,7 +1517,7 @@ namespace Snipper
                 dragStart = e.Location;
                 dragEnd = e.Location;
                 sel = Rectangle.Empty;
-                bar.Visible = false; side.Visible = false;
+                bar.Visible = false; side.Visible = false; qrPanel.Visible = false;
                 Invalidate();
                 return;
             }
@@ -1633,6 +1843,7 @@ namespace Snipper
                 case Keys.Control | Keys.S: SaveToFolder(); return true;
                 case Keys.Control | Keys.Shift | Keys.S: SaveAs(); return true;
                 case Keys.Control | Keys.Z: Undo(); return true;
+                case Keys.Control | Keys.R: RepeatLastRegion(); return true;
 #if OCR
                 case Keys.Control | Keys.T: RecognizeText(); return true;
 #endif
@@ -1648,6 +1859,7 @@ namespace Snipper
             Bitmap result = new Bitmap(sel.Width, sel.Height, PixelFormat.Format32bppArgb);
             using (Graphics g = Graphics.FromImage(result))
             {
+                g.Clear(Color.Black); // fully opaque base: the screenshot never gets see-through pixels
                 g.DrawImage(shot, new Rectangle(0, 0, sel.Width, sel.Height), sel, GraphicsUnit.Pixel);
                 g.TranslateTransform(-sel.X, -sel.Y);
                 g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -1658,6 +1870,7 @@ namespace Snipper
 
         void CopyToClipboard()
         {
+            RememberRegion();
 #if OCR
             if (ocr != null) { CopyOcrSelection(); return; }
 #endif
@@ -1673,6 +1886,7 @@ namespace Snipper
 
         void SaveToFolder()
         {
+            RememberRegion();
             using (Bitmap b = Render())
             {
                 if (b == null) return;
@@ -1693,6 +1907,7 @@ namespace Snipper
         {
             if (sel.IsEmpty) return;
             CommitText();
+            RememberRegion();
             using (SaveFileDialog d = new SaveFileDialog())
             {
                 string folder = Settings.SaveFolder;
@@ -1832,6 +2047,903 @@ namespace Snipper
         }
     }
 #endif
+
+    // ---------------- QR code reader (self-contained; tuned for on-screen QR codes) ----------------
+    static class QrReader
+    {
+        // RS block structure per version (1..40) and level (L, M, Q, H): groups of (count, totalCodewords, dataCodewords)
+        static readonly int[][] RsBlocks = {
+            new int[]{1,26,19},
+            new int[]{1,26,16},
+            new int[]{1,26,13},
+            new int[]{1,26,9},
+            new int[]{1,44,34},
+            new int[]{1,44,28},
+            new int[]{1,44,22},
+            new int[]{1,44,16},
+            new int[]{1,70,55},
+            new int[]{1,70,44},
+            new int[]{2,35,17},
+            new int[]{2,35,13},
+            new int[]{1,100,80},
+            new int[]{2,50,32},
+            new int[]{2,50,24},
+            new int[]{4,25,9},
+            new int[]{1,134,108},
+            new int[]{2,67,43},
+            new int[]{2,33,15,2,34,16},
+            new int[]{2,33,11,2,34,12},
+            new int[]{2,86,68},
+            new int[]{4,43,27},
+            new int[]{4,43,19},
+            new int[]{4,43,15},
+            new int[]{2,98,78},
+            new int[]{4,49,31},
+            new int[]{2,32,14,4,33,15},
+            new int[]{4,39,13,1,40,14},
+            new int[]{2,121,97},
+            new int[]{2,60,38,2,61,39},
+            new int[]{4,40,18,2,41,19},
+            new int[]{4,40,14,2,41,15},
+            new int[]{2,146,116},
+            new int[]{3,58,36,2,59,37},
+            new int[]{4,36,16,4,37,17},
+            new int[]{4,36,12,4,37,13},
+            new int[]{2,86,68,2,87,69},
+            new int[]{4,69,43,1,70,44},
+            new int[]{6,43,19,2,44,20},
+            new int[]{6,43,15,2,44,16},
+            new int[]{4,101,81},
+            new int[]{1,80,50,4,81,51},
+            new int[]{4,50,22,4,51,23},
+            new int[]{3,36,12,8,37,13},
+            new int[]{2,116,92,2,117,93},
+            new int[]{6,58,36,2,59,37},
+            new int[]{4,46,20,6,47,21},
+            new int[]{7,42,14,4,43,15},
+            new int[]{4,133,107},
+            new int[]{8,59,37,1,60,38},
+            new int[]{8,44,20,4,45,21},
+            new int[]{12,33,11,4,34,12},
+            new int[]{3,145,115,1,146,116},
+            new int[]{4,64,40,5,65,41},
+            new int[]{11,36,16,5,37,17},
+            new int[]{11,36,12,5,37,13},
+            new int[]{5,109,87,1,110,88},
+            new int[]{5,65,41,5,66,42},
+            new int[]{5,54,24,7,55,25},
+            new int[]{11,36,12,7,37,13},
+            new int[]{5,122,98,1,123,99},
+            new int[]{7,73,45,3,74,46},
+            new int[]{15,43,19,2,44,20},
+            new int[]{3,45,15,13,46,16},
+            new int[]{1,135,107,5,136,108},
+            new int[]{10,74,46,1,75,47},
+            new int[]{1,50,22,15,51,23},
+            new int[]{2,42,14,17,43,15},
+            new int[]{5,150,120,1,151,121},
+            new int[]{9,69,43,4,70,44},
+            new int[]{17,50,22,1,51,23},
+            new int[]{2,42,14,19,43,15},
+            new int[]{3,141,113,4,142,114},
+            new int[]{3,70,44,11,71,45},
+            new int[]{17,47,21,4,48,22},
+            new int[]{9,39,13,16,40,14},
+            new int[]{3,135,107,5,136,108},
+            new int[]{3,67,41,13,68,42},
+            new int[]{15,54,24,5,55,25},
+            new int[]{15,43,15,10,44,16},
+            new int[]{4,144,116,4,145,117},
+            new int[]{17,68,42},
+            new int[]{17,50,22,6,51,23},
+            new int[]{19,46,16,6,47,17},
+            new int[]{2,139,111,7,140,112},
+            new int[]{17,74,46},
+            new int[]{7,54,24,16,55,25},
+            new int[]{34,37,13},
+            new int[]{4,151,121,5,152,122},
+            new int[]{4,75,47,14,76,48},
+            new int[]{11,54,24,14,55,25},
+            new int[]{16,45,15,14,46,16},
+            new int[]{6,147,117,4,148,118},
+            new int[]{6,73,45,14,74,46},
+            new int[]{11,54,24,16,55,25},
+            new int[]{30,46,16,2,47,17},
+            new int[]{8,132,106,4,133,107},
+            new int[]{8,75,47,13,76,48},
+            new int[]{7,54,24,22,55,25},
+            new int[]{22,45,15,13,46,16},
+            new int[]{10,142,114,2,143,115},
+            new int[]{19,74,46,4,75,47},
+            new int[]{28,50,22,6,51,23},
+            new int[]{33,46,16,4,47,17},
+            new int[]{8,152,122,4,153,123},
+            new int[]{22,73,45,3,74,46},
+            new int[]{8,53,23,26,54,24},
+            new int[]{12,45,15,28,46,16},
+            new int[]{3,147,117,10,148,118},
+            new int[]{3,73,45,23,74,46},
+            new int[]{4,54,24,31,55,25},
+            new int[]{11,45,15,31,46,16},
+            new int[]{7,146,116,7,147,117},
+            new int[]{21,73,45,7,74,46},
+            new int[]{1,53,23,37,54,24},
+            new int[]{19,45,15,26,46,16},
+            new int[]{5,145,115,10,146,116},
+            new int[]{19,75,47,10,76,48},
+            new int[]{15,54,24,25,55,25},
+            new int[]{23,45,15,25,46,16},
+            new int[]{13,145,115,3,146,116},
+            new int[]{2,74,46,29,75,47},
+            new int[]{42,54,24,1,55,25},
+            new int[]{23,45,15,28,46,16},
+            new int[]{17,145,115},
+            new int[]{10,74,46,23,75,47},
+            new int[]{10,54,24,35,55,25},
+            new int[]{19,45,15,35,46,16},
+            new int[]{17,145,115,1,146,116},
+            new int[]{14,74,46,21,75,47},
+            new int[]{29,54,24,19,55,25},
+            new int[]{11,45,15,46,46,16},
+            new int[]{13,145,115,6,146,116},
+            new int[]{14,74,46,23,75,47},
+            new int[]{44,54,24,7,55,25},
+            new int[]{59,46,16,1,47,17},
+            new int[]{12,151,121,7,152,122},
+            new int[]{12,75,47,26,76,48},
+            new int[]{39,54,24,14,55,25},
+            new int[]{22,45,15,41,46,16},
+            new int[]{6,151,121,14,152,122},
+            new int[]{6,75,47,34,76,48},
+            new int[]{46,54,24,10,55,25},
+            new int[]{2,45,15,64,46,16},
+            new int[]{17,152,122,4,153,123},
+            new int[]{29,74,46,14,75,47},
+            new int[]{49,54,24,10,55,25},
+            new int[]{24,45,15,46,46,16},
+            new int[]{4,152,122,18,153,123},
+            new int[]{13,74,46,32,75,47},
+            new int[]{48,54,24,14,55,25},
+            new int[]{42,45,15,32,46,16},
+            new int[]{20,147,117,4,148,118},
+            new int[]{40,75,47,7,76,48},
+            new int[]{43,54,24,22,55,25},
+            new int[]{10,45,15,67,46,16},
+            new int[]{19,148,118,6,149,119},
+            new int[]{18,75,47,31,76,48},
+            new int[]{34,54,24,34,55,25},
+            new int[]{20,45,15,61,46,16} };
+        static readonly int[][] AlignPos = {
+            new int[]{},
+            new int[]{6,18},
+            new int[]{6,22},
+            new int[]{6,26},
+            new int[]{6,30},
+            new int[]{6,34},
+            new int[]{6,22,38},
+            new int[]{6,24,42},
+            new int[]{6,26,46},
+            new int[]{6,28,50},
+            new int[]{6,30,54},
+            new int[]{6,32,58},
+            new int[]{6,34,62},
+            new int[]{6,26,46,66},
+            new int[]{6,26,48,70},
+            new int[]{6,26,50,74},
+            new int[]{6,30,54,78},
+            new int[]{6,30,56,82},
+            new int[]{6,30,58,86},
+            new int[]{6,34,62,90},
+            new int[]{6,28,50,72,94},
+            new int[]{6,26,50,74,98},
+            new int[]{6,30,54,78,102},
+            new int[]{6,28,54,80,106},
+            new int[]{6,32,58,84,110},
+            new int[]{6,30,58,86,114},
+            new int[]{6,34,62,90,118},
+            new int[]{6,26,50,74,98,122},
+            new int[]{6,30,54,78,102,126},
+            new int[]{6,26,52,78,104,130},
+            new int[]{6,30,56,82,108,134},
+            new int[]{6,34,60,86,112,138},
+            new int[]{6,30,58,86,114,142},
+            new int[]{6,34,62,90,118,146},
+            new int[]{6,30,54,78,102,126,150},
+            new int[]{6,24,50,76,102,128,154},
+            new int[]{6,28,54,80,106,132,158},
+            new int[]{6,32,58,84,110,136,162},
+            new int[]{6,26,54,82,110,138,166},
+            new int[]{6,30,58,86,114,142,170} };
+
+        // ---------- public entry ----------
+        // Returns the decoded contents of all QR codes found in the bitmap (duplicates removed)
+        public static List<string> Decode(Bitmap bmp)
+        {
+            List<string> found = new List<string>();
+            if (bmp == null || bmp.Width < 21 || bmp.Height < 21) return found;
+            int w, h;
+            byte[] gray = ToGray(bmp, out w, out h);
+            // tiny codes (1px modules) are easier to find after enlarging
+            if (Math.Min(w, h) < 360) { gray = Upscale(gray, ref w, ref h, Math.Min(w, h) < 120 ? 4 : 3); }
+            for (int pass = 0; pass < 4 && found.Count == 0; pass++)
+            {
+                bool[] bin = pass < 2 ? BinarizeOtsu(gray, w, h) : BinarizeLocal(gray, w, h);
+                if (pass % 2 == 1) for (int i = 0; i < bin.Length; i++) bin[i] = !bin[i]; // light-on-dark codes
+                DecodeAll(bin, w, h, found);
+            }
+            return found;
+        }
+
+        // ---------- image preparation ----------
+        static byte[] ToGray(Bitmap bmp, out int w, out int h)
+        {
+            w = bmp.Width; h = bmp.Height;
+            byte[] g = new byte[w * h];
+            BitmapData bd = bmp.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+            try
+            {
+                byte[] row = new byte[w * 4];
+                for (int y = 0; y < h; y++)
+                {
+                    Marshal.Copy(new IntPtr(bd.Scan0.ToInt64() + (long)y * bd.Stride), row, 0, w * 4);
+                    for (int x = 0; x < w; x++)
+                    {
+                        int b = row[x * 4], gg = row[x * 4 + 1], r = row[x * 4 + 2];
+                        g[y * w + x] = (byte)((r * 299 + gg * 587 + b * 114) / 1000);
+                    }
+                }
+            }
+            finally { bmp.UnlockBits(bd); }
+            return g;
+        }
+
+        static byte[] Upscale(byte[] g, ref int w, ref int h, int k)
+        {
+            int nw = w * k, nh = h * k;
+            byte[] r = new byte[nw * nh];
+            for (int y = 0; y < nh; y++)
+            {
+                int sy = (y / k) * w;
+                for (int x = 0; x < nw; x++) r[y * nw + x] = g[sy + x / k];
+            }
+            w = nw; h = nh;
+            return r;
+        }
+
+        static bool[] BinarizeOtsu(byte[] g, int w, int h)
+        {
+            int[] hist = new int[256];
+            for (int i = 0; i < g.Length; i++) hist[g[i]]++;
+            long total = g.Length, sum = 0;
+            for (int i = 0; i < 256; i++) sum += (long)i * hist[i];
+            long sumB = 0; long wB = 0; double best = -1; int thr = 128;
+            for (int t = 0; t < 256; t++)
+            {
+                wB += hist[t]; if (wB == 0) continue;
+                long wF = total - wB; if (wF == 0) break;
+                sumB += (long)t * hist[t];
+                double mB = (double)sumB / wB, mF = (double)(sum - sumB) / wF;
+                double between = (double)wB * wF * (mB - mF) * (mB - mF);
+                if (between > best) { best = between; thr = t; }
+            }
+            bool[] bin = new bool[g.Length];
+            for (int i = 0; i < g.Length; i++) bin[i] = g[i] <= thr;
+            return bin;
+        }
+
+        // local mean threshold (integral image) — helps when the code sits on a busy or uneven background
+        static bool[] BinarizeLocal(byte[] g, int w, int h)
+        {
+            long[] ii = new long[(w + 1) * (h + 1)];
+            for (int y = 0; y < h; y++)
+            {
+                long rs = 0;
+                for (int x = 0; x < w; x++) { rs += g[y * w + x]; ii[(y + 1) * (w + 1) + x + 1] = ii[y * (w + 1) + x + 1] + rs; }
+            }
+            int rad = Math.Max(8, Math.Min(w, h) / 16);
+            bool[] bin = new bool[g.Length];
+            for (int y = 0; y < h; y++)
+            {
+                int y0 = Math.Max(0, y - rad), y1 = Math.Min(h, y + rad + 1);
+                for (int x = 0; x < w; x++)
+                {
+                    int x0 = Math.Max(0, x - rad), x1 = Math.Min(w, x + rad + 1);
+                    long s = ii[y1 * (w + 1) + x1] - ii[y0 * (w + 1) + x1] - ii[y1 * (w + 1) + x0] + ii[y0 * (w + 1) + x0];
+                    int n = (x1 - x0) * (y1 - y0);
+                    bin[y * w + x] = g[y * w + x] * n < s - 6 * n; // darker than the local mean
+                }
+            }
+            return bin;
+        }
+
+        // ---------- finder patterns ----------
+        class Finder { public double X, Y, Module; public int Count; }
+
+        static bool Ratio(int[] c)
+        {
+            int total = c[0] + c[1] + c[2] + c[3] + c[4];
+            if (total < 7) return false;
+            double m = total / 7.0, v = m / 1.6;
+            return Math.Abs(m - c[0]) < v && Math.Abs(m - c[1]) < v && Math.Abs(3 * m - c[2]) < 3 * v &&
+                   Math.Abs(m - c[3]) < v && Math.Abs(m - c[4]) < v;
+        }
+
+        static bool Dark(bool[] bin, int w, int h, int x, int y)
+        {
+            return x >= 0 && y >= 0 && x < w && y < h && bin[y * w + x];
+        }
+
+        // Walk from (cx,cy) along (dx,dy) both ways; returns the centre offset of the 1:1:3:1:1 pattern and its total
+        static bool Cross(bool[] bin, int w, int h, int cx, int cy, int dx, int dy, int maxRun, out double center, out int total)
+        {
+            center = 0; total = 0;
+            if (!Dark(bin, w, h, cx, cy)) return false;
+            int[] c = new int[5];
+            int t = 0;
+            while (Dark(bin, w, h, cx - t * dx, cy - t * dy)) { c[2]++; t++; if (c[2] > maxRun * 3) return false; }
+            int lo = -(t - 1);
+            while (t < 4 * maxRun && !Dark(bin, w, h, cx - t * dx, cy - t * dy) && Inside(w, h, cx - t * dx, cy - t * dy)) { c[1]++; t++; }
+            if (c[1] == 0 || c[1] > maxRun) return false;
+            while (Dark(bin, w, h, cx - t * dx, cy - t * dy)) { c[0]++; t++; if (c[0] > maxRun) return false; }
+            if (c[0] == 0) return false;
+            t = 1;
+            while (Dark(bin, w, h, cx + t * dx, cy + t * dy)) { c[2]++; t++; if (c[2] > maxRun * 3) return false; }
+            int hi = t - 1;
+            while (t < 4 * maxRun && !Dark(bin, w, h, cx + t * dx, cy + t * dy) && Inside(w, h, cx + t * dx, cy + t * dy)) { c[3]++; t++; }
+            if (c[3] == 0 || c[3] > maxRun) return false;
+            while (Dark(bin, w, h, cx + t * dx, cy + t * dy)) { c[4]++; t++; if (c[4] > maxRun) return false; }
+            if (c[4] == 0) return false;
+            if (!Ratio(c)) return false;
+            center = (lo + hi) / 2.0;
+            total = c[0] + c[1] + c[2] + c[3] + c[4];
+            return true;
+        }
+
+        static bool Inside(int w, int h, int x, int y) { return x >= 0 && y >= 0 && x < w && y < h; }
+
+        static List<Finder> FindFinders(bool[] bin, int w, int h)
+        {
+            List<Finder> list = new List<Finder>();
+            int[] runs = new int[w + 1]; int[] starts = new int[w + 1];
+            for (int y = 0; y < h; y++)
+            {
+                // run-lengths of the row
+                int n = 0, x = 0;
+                while (x < w)
+                {
+                    bool v = bin[y * w + x]; int s = x;
+                    while (x < w && bin[y * w + x] == v) x++;
+                    starts[n] = s; runs[n] = x - s; n++;
+                }
+                int first = bin[y * w] ? 0 : 1; // runs at even/odd index are dark depending on the first pixel
+                for (int i = first; i + 4 < n; i += 2)
+                {
+                    int[] c = { runs[i], runs[i + 1], runs[i + 2], runs[i + 3], runs[i + 4] };
+                    if (!Ratio(c)) continue;
+                    int total = c[0] + c[1] + c[2] + c[3] + c[4];
+                    int cx = starts[i + 2] + runs[i + 2] / 2;
+                    double vOff; int vTot;
+                    if (!Cross(bin, w, h, cx, y, 0, 1, total, out vOff, out vTot)) continue;
+                    int cy = (int)Math.Round(y + vOff);
+                    double hOff; int hTot;
+                    if (!Cross(bin, w, h, cx, cy, 1, 0, total, out hOff, out hTot)) continue;
+                    double fx = cx + hOff, fy = cy;
+                    // re-check vertically through the refined x for a precise y
+                    if (Cross(bin, w, h, (int)Math.Round(fx), cy, 0, 1, total, out vOff, out vTot)) fy = cy + vOff;
+                    double mod = (hTot + vTot) / 14.0;
+                    if (Math.Abs(hTot - vTot) > Math.Max(hTot, vTot) * 0.4) continue;
+                    Add(list, fx, fy, mod);
+                }
+            }
+            return list;
+        }
+
+        static void Add(List<Finder> list, double x, double y, double m)
+        {
+            foreach (Finder f in list)
+                if (Math.Abs(f.X - x) <= f.Module * 2 && Math.Abs(f.Y - y) <= f.Module * 2 && Math.Abs(f.Module - m) <= Math.Max(1, f.Module * 0.5))
+                {
+                    f.X = (f.X * f.Count + x) / (f.Count + 1);
+                    f.Y = (f.Y * f.Count + y) / (f.Count + 1);
+                    f.Module = (f.Module * f.Count + m) / (f.Count + 1);
+                    f.Count++;
+                    return;
+                }
+            Finder nf = new Finder(); nf.X = x; nf.Y = y; nf.Module = m; nf.Count = 1;
+            list.Add(nf);
+        }
+
+        // ---------- locate + sample ----------
+        static void DecodeAll(bool[] bin, int w, int h, List<string> found)
+        {
+            List<Finder> fs = FindFinders(bin, w, h);
+            fs.RemoveAll(delegate (Finder f) { return f.Count < 2 && f.Module >= 2; });
+            fs.Sort(delegate (Finder a, Finder b) { return b.Count.CompareTo(a.Count); });
+            if (fs.Count > 24) fs.RemoveRange(24, fs.Count - 24);
+            List<Finder[]> used = new List<Finder[]>();
+            for (int i = 0; i < fs.Count; i++)
+                for (int j = i + 1; j < fs.Count; j++)
+                    for (int k = j + 1; k < fs.Count; k++)
+                    {
+                        Finder[] t = Order(fs[i], fs[j], fs[k]);
+                        if (t == null) continue;
+                        string s = DecodeAt(bin, w, h, t[0], t[1], t[2]);
+                        if (s != null && !found.Contains(s)) found.Add(s);
+                    }
+        }
+
+        // returns {topLeft, topRight, bottomLeft} or null if the three don't form a QR corner layout
+        static Finder[] Order(Finder a, Finder b, Finder c)
+        {
+            double mMax = Math.Max(a.Module, Math.Max(b.Module, c.Module)), mMin = Math.Min(a.Module, Math.Min(b.Module, c.Module));
+            if (mMax > mMin * 1.6) return null;
+            double ab = Dist(a, b), ac = Dist(a, c), bc = Dist(b, c);
+            Finder tl, p, q; double leg1, leg2, hyp;
+            if (bc >= ab && bc >= ac) { tl = a; p = b; q = c; leg1 = ab; leg2 = ac; hyp = bc; }
+            else if (ac >= ab && ac >= bc) { tl = b; p = a; q = c; leg1 = ab; leg2 = bc; hyp = ac; }
+            else { tl = c; p = a; q = b; leg1 = ac; leg2 = bc; hyp = ab; }
+            double m = (a.Module + b.Module + c.Module) / 3;
+            if (leg1 < m * 14 || leg2 < m * 14) return null;          // at least version 1 apart
+            if (Math.Max(leg1, leg2) > Math.Min(leg1, leg2) * 1.25) return null;
+            double expect = Math.Sqrt(leg1 * leg1 + leg2 * leg2);
+            if (Math.Abs(hyp - expect) > expect * 0.12) return null;
+            // y grows downwards: (TR - TL) x (BL - TL) > 0
+            double cross = (p.X - tl.X) * (q.Y - tl.Y) - (p.Y - tl.Y) * (q.X - tl.X);
+            if (cross < 0) { Finder tmp = p; p = q; q = tmp; }
+            return new Finder[] { tl, p, q };
+        }
+
+        static double Dist(Finder a, Finder b) { double dx = a.X - b.X, dy = a.Y - b.Y; return Math.Sqrt(dx * dx + dy * dy); }
+
+        static string DecodeAt(bool[] bin, int w, int h, Finder tl, Finder tr, Finder bl)
+        {
+            double m = (tl.Module + tr.Module + bl.Module) / 3;
+            double est = ((Dist(tl, tr) + Dist(tl, bl)) / 2) / m + 7;
+            int baseDim = (int)Math.Round((est - 17) / 4.0) * 4 + 17;
+            int[] tries = { baseDim, baseDim - 4, baseDim + 4, baseDim - 8, baseDim + 8 };
+            foreach (int dim0 in tries)
+            {
+                int dim = dim0;
+                if (dim < 21 || dim > 177) continue;
+                bool[,] mx = Sample(bin, w, h, tl, tr, bl, dim);
+                int ver = (dim - 17) / 4;
+                if (ver >= 7)
+                {
+                    int dv = ReadVersion(mx, dim);
+                    if (dv > 0 && dv != ver) { ver = dv; dim = 17 + 4 * dv; mx = Sample(bin, w, h, tl, tr, bl, dim); }
+                }
+                string s = DecodeMatrix(mx, dim, ver);
+                if (s == null) s = DecodeMatrix(Transpose(mx, dim), dim, ver); // mirrored code
+                if (s != null) return s;
+            }
+            return null;
+        }
+
+        static bool[,] Sample(bool[] bin, int w, int h, Finder tl, Finder tr, Finder bl, int dim)
+        {
+            bool[,] mx = new bool[dim, dim]; // [row, col]
+            double span = dim - 7;
+            double ux = (tr.X - tl.X) / span, uy = (tr.Y - tl.Y) / span;  // one module along a row
+            double vx = (bl.X - tl.X) / span, vy = (bl.Y - tl.Y) / span;  // one module down a column
+            for (int r = 0; r < dim; r++)
+                for (int c = 0; c < dim; c++)
+                {
+                    double mcx = c + 0.5 - 3.5, mcy = r + 0.5 - 3.5;
+                    double px = tl.X + mcx * ux + mcy * vx, py = tl.Y + mcx * uy + mcy * vy;
+                    // majority of 5 samples around the module centre
+                    int votes = 0;
+                    double dx = (ux + vx) * 0.22, dy = (uy + vy) * 0.22;
+                    if (Dark(bin, w, h, (int)Math.Round(px), (int)Math.Round(py))) votes++;
+                    if (Dark(bin, w, h, (int)Math.Round(px + dx), (int)Math.Round(py + dy))) votes++;
+                    if (Dark(bin, w, h, (int)Math.Round(px - dx), (int)Math.Round(py - dy))) votes++;
+                    if (Dark(bin, w, h, (int)Math.Round(px + dx), (int)Math.Round(py - dy))) votes++;
+                    if (Dark(bin, w, h, (int)Math.Round(px - dx), (int)Math.Round(py + dy))) votes++;
+                    mx[r, c] = votes >= 3;
+                }
+            return mx;
+        }
+
+        static bool[,] Transpose(bool[,] m, int dim)
+        {
+            bool[,] t = new bool[dim, dim];
+            for (int r = 0; r < dim; r++) for (int c = 0; c < dim; c++) t[r, c] = m[c, r];
+            return t;
+        }
+
+        // ---------- format & version ----------
+        static int Bch(int value, int poly, int polyDeg)
+        {
+            int v = value << polyDeg;
+            int msb = 31; while (msb >= 0 && ((poly >> msb) & 1) == 0) msb--;
+            for (int i = 31; i >= msb; i--)
+                if (((v >> i) & 1) != 0) v ^= poly << (i - msb);
+            return (value << polyDeg) | v;
+        }
+
+        static int Popcount(int x) { int n = 0; while (x != 0) { n += x & 1; x >>= 1; } return n; }
+
+        // m[row, col]; "x" is the column
+        static bool Bit(bool[,] m, int x, int y) { return m[y, x]; }
+
+        static int ReadFormat(bool[,] m, int dim, out int ecLevel, out int mask)
+        {
+            int b1 = 0;
+            for (int i = 0; i < 6; i++) b1 = (b1 << 1) | (Bit(m, i, 8) ? 1 : 0);
+            b1 = (b1 << 1) | (Bit(m, 7, 8) ? 1 : 0);
+            b1 = (b1 << 1) | (Bit(m, 8, 8) ? 1 : 0);
+            b1 = (b1 << 1) | (Bit(m, 8, 7) ? 1 : 0);
+            for (int j = 5; j >= 0; j--) b1 = (b1 << 1) | (Bit(m, 8, j) ? 1 : 0);
+            int b2 = 0;
+            for (int j = dim - 1; j >= dim - 7; j--) b2 = (b2 << 1) | (Bit(m, 8, j) ? 1 : 0);
+            for (int i = dim - 8; i < dim; i++) b2 = (b2 << 1) | (Bit(m, i, 8) ? 1 : 0);
+            int best = 99, bestData = -1;
+            for (int d = 0; d < 32; d++)
+            {
+                int code = Bch(d, 0x537, 10) ^ 0x5412;
+                int e = Math.Min(Popcount(code ^ b1), Popcount(code ^ b2));
+                if (e < best) { best = e; bestData = d; }
+            }
+            ecLevel = -1; mask = -1;
+            if (best > 3) return -1;
+            // format bits: 01=L, 00=M, 11=Q, 10=H → our index L0 M1 Q2 H3
+            int ec = (bestData >> 3) & 3;
+            ecLevel = ec == 1 ? 0 : ec == 0 ? 1 : ec == 3 ? 2 : 3;
+            mask = bestData & 7;
+            return 0;
+        }
+
+        static int ReadVersion(bool[,] m, int dim)
+        {
+            int v1 = 0, v2 = 0;
+            for (int j = 5; j >= 0; j--) for (int i = dim - 9; i >= dim - 11; i--) v1 = (v1 << 1) | (Bit(m, i, j) ? 1 : 0);
+            for (int i = 5; i >= 0; i--) for (int j = dim - 9; j >= dim - 11; j--) v2 = (v2 << 1) | (Bit(m, i, j) ? 1 : 0);
+            int best = 99, bestV = -1;
+            for (int v = 7; v <= 40; v++)
+            {
+                int code = Bch(v, 0x1F25, 12);
+                int e = Math.Min(Popcount(code ^ v1), Popcount(code ^ v2));
+                if (e < best) { best = e; bestV = v; }
+            }
+            return best <= 3 ? bestV : -1;
+        }
+
+        // ---------- codewords ----------
+        static bool[,] FunctionMask(int ver, int dim)
+        {
+            bool[,] f = new bool[dim, dim];
+            Region(f, 0, 0, 9, 9); Region(f, dim - 8, 0, 8, 9); Region(f, 0, dim - 8, 9, 8);
+            int[] pos = AlignPos[ver - 1];
+            int n = pos.Length;
+            for (int i = 0; i < n; i++)
+                for (int j = 0; j < n; j++)
+                {
+                    if ((i == 0 && (j == 0 || j == n - 1)) || (i == n - 1 && j == 0)) continue;
+                    Region(f, pos[i] - 2, pos[j] - 2, 5, 5);
+                }
+            Region(f, 6, 9, 1, dim - 17); Region(f, 9, 6, dim - 17, 1);
+            if (ver > 6) { Region(f, dim - 11, 0, 3, 6); Region(f, 0, dim - 11, 6, 3); }
+            return f;
+        }
+
+        static void Region(bool[,] f, int left, int top, int width, int height)
+        {
+            for (int y = top; y < top + height; y++) for (int x = left; x < left + width; x++) f[y, x] = true;
+        }
+
+        static bool MaskBit(int mask, int i, int j) // i = row, j = column
+        {
+            switch (mask)
+            {
+                case 0: return ((i + j) & 1) == 0;
+                case 1: return (i & 1) == 0;
+                case 2: return j % 3 == 0;
+                case 3: return (i + j) % 3 == 0;
+                case 4: return ((i / 2) + (j / 3)) % 2 == 0;
+                case 5: return (i * j) % 2 + (i * j) % 3 == 0;
+                case 6: return ((i * j) % 2 + (i * j) % 3) % 2 == 0;
+                default: return ((i + j) % 2 + (i * j) % 3) % 2 == 0;
+            }
+        }
+
+        static string DecodeMatrix(bool[,] m, int dim, int ver)
+        {
+            if (ver < 1 || ver > 40) return null;
+            int ec, mask;
+            if (ReadFormat(m, dim, out ec, out mask) < 0) return null;
+            bool[,] func = FunctionMask(ver, dim);
+            List<byte> raw = new List<byte>();
+            int cur = 0, bits = 0;
+            bool up = true;
+            for (int j = dim - 1; j > 0; j -= 2)
+            {
+                if (j == 6) j--;
+                for (int count = 0; count < dim; count++)
+                {
+                    int i = up ? dim - 1 - count : count;
+                    for (int col = 0; col < 2; col++)
+                    {
+                        int x = j - col;
+                        if (func[i, x]) continue;
+                        bool b = m[i, x] ^ MaskBit(mask, i, x);
+                        cur = (cur << 1) | (b ? 1 : 0);
+                        if (++bits == 8) { raw.Add((byte)cur); cur = 0; bits = 0; }
+                    }
+                }
+                up = !up;
+            }
+            byte[] data = Deinterleave(raw.ToArray(), ver, ec);
+            if (data == null) return null;
+            return ParseData(data, ver);
+        }
+
+        static byte[] Deinterleave(byte[] raw, int ver, int ec)
+        {
+            int[] g = RsBlocks[(ver - 1) * 4 + ec];
+            List<int> totals = new List<int>(), datas = new List<int>();
+            for (int i = 0; i + 2 < g.Length; i += 3)
+                for (int c = 0; c < g[i]; c++) { totals.Add(g[i + 1]); datas.Add(g[i + 2]); }
+            int nb = totals.Count;
+            int sum = 0; foreach (int t in totals) sum += t;
+            if (raw.Length < sum) return null;
+            int ecPer = totals[0] - datas[0];
+            int[][] blocks = new int[nb][];
+            for (int b = 0; b < nb; b++) blocks[b] = new int[totals[b]];
+            int shortTotal = totals[0];
+            int longerStart = nb;
+            for (int b = 0; b < nb; b++) if (totals[b] != shortTotal) { longerStart = b; break; }
+            int shortData = shortTotal - ecPer;
+            int off = 0;
+            for (int i = 0; i < shortData; i++) for (int b = 0; b < nb; b++) blocks[b][i] = raw[off++];
+            for (int b = longerStart; b < nb; b++) blocks[b][shortData] = raw[off++];
+            int max = blocks[nb - 1].Length;
+            for (int i = shortData; i < max; i++)
+                for (int b = 0; b < nb; b++)
+                {
+                    int io = b < longerStart ? i : i + 1;
+                    if (io < blocks[b].Length) blocks[b][io] = raw[off++];
+                }
+            List<byte> outp = new List<byte>();
+            for (int b = 0; b < nb; b++)
+            {
+                if (!ReedSolomon.Correct(blocks[b], ecPer)) return null;
+                for (int i = 0; i < datas[b]; i++) outp.Add((byte)blocks[b][i]);
+            }
+            return outp.ToArray();
+        }
+
+        // ---------- data segments ----------
+        class Bits
+        {
+            readonly byte[] d; int pos;
+            public Bits(byte[] data) { d = data; }
+            public int Left { get { return d.Length * 8 - pos; } }
+            public int Read(int n)
+            {
+                int v = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    int b = (d[pos >> 3] >> (7 - (pos & 7))) & 1;
+                    v = (v << 1) | b; pos++;
+                }
+                return v;
+            }
+        }
+
+        const string Alnum = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
+
+        static string ParseData(byte[] data, int ver)
+        {
+            Bits bs = new Bits(data);
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            System.Text.Encoding eci = null;
+            int sizeClass = ver <= 9 ? 0 : ver <= 26 ? 1 : 2;
+            while (bs.Left >= 4)
+            {
+                int mode = bs.Read(4);
+                if (mode == 0) break;
+                if (mode == 1)
+                {
+                    int cnt = bs.Read(new int[] { 10, 12, 14 }[sizeClass]);
+                    while (cnt >= 3) { if (bs.Left < 10) return null; sb.Append(bs.Read(10).ToString("000")); cnt -= 3; }
+                    if (cnt == 2) { if (bs.Left < 7) return null; sb.Append(bs.Read(7).ToString("00")); }
+                    else if (cnt == 1) { if (bs.Left < 4) return null; sb.Append(bs.Read(4).ToString()); }
+                }
+                else if (mode == 2)
+                {
+                    int cnt = bs.Read(new int[] { 9, 11, 13 }[sizeClass]);
+                    while (cnt >= 2) { if (bs.Left < 11) return null; int v = bs.Read(11); if (v / 45 >= 45) return null; sb.Append(Alnum[v / 45]).Append(Alnum[v % 45]); cnt -= 2; }
+                    if (cnt == 1) { if (bs.Left < 6) return null; int v = bs.Read(6); if (v >= 45) return null; sb.Append(Alnum[v]); }
+                }
+                else if (mode == 4)
+                {
+                    int cnt = bs.Read(new int[] { 8, 16, 16 }[sizeClass]);
+                    if (bs.Left < cnt * 8) return null;
+                    byte[] buf = new byte[cnt];
+                    for (int i = 0; i < cnt; i++) buf[i] = (byte)bs.Read(8);
+                    sb.Append(DecodeBytes(buf, eci));
+                }
+                else if (mode == 7)
+                {
+                    int b = bs.Read(8), val;
+                    if ((b & 0x80) == 0) val = b & 0x7F;
+                    else if ((b & 0xC0) == 0x80) val = ((b & 0x3F) << 8) | bs.Read(8);
+                    else val = ((b & 0x1F) << 16) | bs.Read(16);
+                    try
+                    {
+                        if (val == 26) eci = new System.Text.UTF8Encoding(false);
+                        else if (val == 3 || val == 1) eci = System.Text.Encoding.GetEncoding(28591);
+                        else if (val == 20) eci = System.Text.Encoding.GetEncoding(932);
+                        else if (val == 22) eci = System.Text.Encoding.GetEncoding(1251);
+                        else if (val == 7) eci = System.Text.Encoding.GetEncoding(28595);
+                    }
+                    catch { eci = null; }
+                }
+                else if (mode == 8)
+                {
+                    int cnt = bs.Read(new int[] { 8, 10, 12 }[sizeClass]);
+                    List<byte> sj = new List<byte>();
+                    for (int i = 0; i < cnt; i++)
+                    {
+                        if (bs.Left < 13) return null;
+                        int v = bs.Read(13);
+                        int a = ((v / 0xC0) << 8) | (v % 0xC0);
+                        a += a < 0x1F00 ? 0x8140 : 0xC140;
+                        sj.Add((byte)(a >> 8)); sj.Add((byte)a);
+                    }
+                    try { sb.Append(System.Text.Encoding.GetEncoding(932).GetString(sj.ToArray())); } catch { return null; }
+                }
+                else if (mode == 3) { bs.Read(16); }              // structured append header
+                else if (mode == 5) { }                            // FNC1 (first position)
+                else if (mode == 9) { bs.Read(8); }                // FNC1 (second position)
+                else break;                                        // unknown mode: stop
+            }
+            return sb.Length > 0 ? sb.ToString() : null;
+        }
+
+        static string DecodeBytes(byte[] buf, System.Text.Encoding eci)
+        {
+            if (eci != null) return eci.GetString(buf);
+            try { return new System.Text.UTF8Encoding(false, true).GetString(buf); }   // most codes are UTF-8
+            catch { return System.Text.Encoding.GetEncoding(28591).GetString(buf); }  // spec default: ISO-8859-1
+        }
+    }
+
+    // Reed–Solomon error correction over GF(256), polynomial 0x11D, generator base 0 (as used by QR codes)
+    static class ReedSolomon
+    {
+        static readonly int[] Exp = new int[256], Log = new int[256];
+        static ReedSolomon()
+        {
+            int x = 1;
+            for (int i = 0; i < 256; i++) { Exp[i] = x; x <<= 1; if (x >= 0x100) x ^= 0x11D; }
+            for (int i = 0; i < 255; i++) Log[Exp[i]] = i;
+        }
+        static int Mul(int a, int b) { return a == 0 || b == 0 ? 0 : Exp[(Log[a] + Log[b]) % 255]; }
+        static int Inv(int a) { return Exp[255 - Log[a]]; }
+
+        // polynomials: coefficients from the highest degree, no leading zeros (except the zero polynomial {0})
+        static int[] Norm(int[] p)
+        {
+            int i = 0; while (i < p.Length - 1 && p[i] == 0) i++;
+            if (i == 0) return p;
+            int[] r = new int[p.Length - i]; Array.Copy(p, i, r, 0, r.Length); return r;
+        }
+        static int Deg(int[] p) { return p.Length - 1; }
+        static bool IsZero(int[] p) { return p[0] == 0; }
+        static int Coef(int[] p, int degree) { return p[p.Length - 1 - degree]; }
+        static int Eval(int[] p, int a)
+        {
+            if (a == 0) return Coef(p, 0);
+            int r = 0; foreach (int c in p) r = Mul(r, a) ^ c; return r;
+        }
+        static int[] Add(int[] a, int[] b)
+        {
+            if (IsZero(a)) return b; if (IsZero(b)) return a;
+            int[] small = a.Length < b.Length ? a : b, large = a.Length < b.Length ? b : a;
+            int[] r = new int[large.Length];
+            int diff = large.Length - small.Length;
+            Array.Copy(large, r, diff);
+            for (int i = diff; i < large.Length; i++) r[i] = small[i - diff] ^ large[i];
+            return Norm(r);
+        }
+        static int[] MulP(int[] a, int[] b)
+        {
+            if (IsZero(a) || IsZero(b)) return new int[] { 0 };
+            int[] r = new int[a.Length + b.Length - 1];
+            for (int i = 0; i < a.Length; i++) for (int j = 0; j < b.Length; j++) r[i + j] ^= Mul(a[i], b[j]);
+            return Norm(r);
+        }
+        static int[] Scale(int[] a, int s)
+        {
+            if (s == 0) return new int[] { 0 };
+            int[] r = new int[a.Length]; for (int i = 0; i < a.Length; i++) r[i] = Mul(a[i], s); return Norm(r);
+        }
+        static int[] Monomial(int degree, int c)
+        {
+            if (c == 0) return new int[] { 0 };
+            int[] r = new int[degree + 1]; r[0] = c; return r;
+        }
+        static int[] MulMono(int[] a, int degree, int c)
+        {
+            if (c == 0) return new int[] { 0 };
+            int[] r = new int[a.Length + degree];
+            for (int i = 0; i < a.Length; i++) r[i] = Mul(a[i], c);
+            return Norm(r);
+        }
+
+        // Corrects 'cw' in place; returns false if there are too many errors
+        public static bool Correct(int[] cw, int twoS)
+        {
+            int[] poly = Norm((int[])cw.Clone());
+            int[] synd = new int[twoS];
+            bool ok = true;
+            for (int i = 0; i < twoS; i++)
+            {
+                int e = Eval(poly, Exp[i]);
+                synd[twoS - 1 - i] = e;
+                if (e != 0) ok = false;
+            }
+            if (ok) return true;
+            try
+            {
+                int[] sigma, omega;
+                if (!Euclid(Monomial(twoS, 1), Norm(synd), twoS, out sigma, out omega)) return false;
+                int nErr = Deg(sigma);
+                int[] loc = new int[nErr]; int e = 0;
+                if (nErr == 1) loc[0] = Coef(sigma, 1);
+                else
+                    for (int i = 1; i < 256 && e < nErr; i++) if (Eval(sigma, i) == 0) loc[e++] = Inv(i);
+                if (nErr != 1 && e != nErr) return false;
+                for (int i = 0; i < nErr; i++)
+                {
+                    int xiInv = Inv(loc[i]);
+                    int den = 1;
+                    for (int j = 0; j < nErr; j++)
+                        if (i != j)
+                        {
+                            int term = Mul(loc[j], xiInv);
+                            den = Mul(den, (term & 1) == 0 ? term | 1 : term & ~1);
+                        }
+                    int mag = Mul(Eval(omega, xiInv), Inv(den));
+                    int pos = cw.Length - 1 - Log[loc[i]];
+                    if (pos < 0) return false;
+                    cw[pos] ^= mag;
+                }
+                return true;
+            }
+            catch { return false; }
+        }
+
+        static bool Euclid(int[] a, int[] b, int R, out int[] sigma, out int[] omega)
+        {
+            sigma = null; omega = null;
+            if (Deg(a) < Deg(b)) { int[] t = a; a = b; b = t; }
+            int[] rLast = a, r = b, tLast = new int[] { 0 }, t2 = new int[] { 1 };
+            while (2 * Deg(r) >= R)
+            {
+                int[] rLastLast = rLast, tLastLast = tLast;
+                rLast = r; tLast = t2;
+                if (IsZero(rLast)) return false;
+                r = rLastLast;
+                int[] q = new int[] { 0 };
+                int dltInv = Inv(Coef(rLast, Deg(rLast)));
+                while (Deg(r) >= Deg(rLast) && !IsZero(r))
+                {
+                    int dd = Deg(r) - Deg(rLast);
+                    int sc = Mul(Coef(r, Deg(r)), dltInv);
+                    q = Add(q, Monomial(dd, sc));
+                    r = Add(r, MulMono(rLast, dd, sc));
+                }
+                t2 = Add(MulP(q, tLast), tLastLast);
+                if (Deg(r) >= Deg(rLast)) return false;
+            }
+            int s0 = Coef(t2, 0);
+            if (s0 == 0) return false;
+            int inv = Inv(s0);
+            sigma = Scale(t2, inv); omega = Scale(r, inv);
+            return true;
+        }
+    }
 
     // A screenshot pinned on top of all windows. Drag to move, wheel to zoom, Ctrl+wheel for opacity.
     class PinForm : Form
@@ -2116,6 +3228,7 @@ namespace Snipper
         bool swallowUp;                      // also swallow the hotkey's key-up
         public Action<int, int> Recorder;    // when set, the hook records a new combo instead of taking a screenshot
         ToolStripMenuItem hotkeyItem;
+        ToolStripMenuItem repeatItem;
 
         public TrayApp()
         {
@@ -2139,6 +3252,9 @@ namespace Snipper
             enItem.Click += delegate { Settings.Language = "en"; L.En = true; };
             langItem.DropDownItems.Add(ukItem);
             langItem.DropDownItems.Add(enItem);
+            repeatItem = new ToolStripMenuItem("");
+            repeatItem.Click += delegate { Capture(); if (active != null) active.RepeatLastRegion(); };
+            menu.Items.Insert(1, repeatItem);
             menu.Items.Add(langItem);
             ToolStripItem unpinItem = menu.Items.Add("", null, delegate
             {
@@ -2155,6 +3271,8 @@ namespace Snipper
                 chooseItem.Text = L.T("Вибрати папку для збереження…", "Choose save folder…");
                 autostartItem.Text = L.T("Запускати разом із Windows", "Start with Windows");
                 exitItem.Text = L.T("Вихід", "Exit");
+                repeatItem.Text = L.T("Скріншот попередньої зони", "Screenshot of the previous area");
+                repeatItem.Enabled = !Settings.LastRegion.IsEmpty;
                 int pins = 0;
                 foreach (Form f in Application.OpenForms) if (f is PinForm) pins++;
                 unpinItem.Text = L.T("Закрити всі закріплені знімки", "Close all pinned shots") + " (" + pins + ")";
